@@ -8,17 +8,11 @@ function installLibs()
     narginchk(0, 0)
     nargoutchk(0, 0)
 
-    % check if the libraries are already installed
-    if exist(['lib' filesep 'LibTopoART.Compatibility.dll'], 'file')
-        disp('Libraries are already installed')
-        return
-    end
-
     % set the versions of the required libraries
-    fSharpCoreVersion = '10.0.107';
+    fSharpCoreVersion = '10.1.300';
     systemNumericsVectorsVersion = '4.6.1';
     libTopoARTVersion = '1.0.0';
-    libTopoARTCompatibilityVersion = '0.6.0';
+    libTopoARTCompatibilityVersion = '0.7.0';
 
     % check .NET support
     if ~(ispc || isunix)
