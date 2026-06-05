@@ -22,38 +22,52 @@
 %
 %   Syntax
 %     CLASSIFYWITHBACKBONE2DEXAMPLE
-%     CLASSIFYWITHBACKBONE2DEXAMPLE(confThreshTopoART)
-%     CLASSIFYWITHBACKBONE2DEXAMPLE(confThreshTopoART, confThreshSoftmax)
+%     CLASSIFYWITHBACKBONE2DEXAMPLE(useScaling)
+%     CLASSIFYWITHBACKBONE2DEXAMPLE(useScaling, threshTA)
+%     CLASSIFYWITHBACKBONE2DEXAMPLE(useScaling, threshTA, threshSM)
 %
 %   Input Arguments
-%     confThreshTopoART - Confidence threshold for the TopoART head
+%     useScaling - Select input normalization method (scaling or tanh-based)
+%       TopoART inputs must lie in [0, 1]. This switch enables to choose
+%       between linear scaling (if true) and tanh-based normalization.
+%       (default: true)
+%     threshTA - Confidence threshold for the TopoART head
 %       This confidence measures similarity to known data, so a high
 %       threshold rejects grid points that fall outside the distribution of
-%       the training features. (range: [0, 1]; default: 0.95)
-%     confThreshSoftmax - Confidence threshold for the original head
+%       the training features. (range: [0, 1]; default: 0.98 or 0.95,
+%       depending on useScaling)
+%     threshSM - Confidence threshold for the original head
 %       Softmax confidence is just the maximum class probability and stays
 %       high almost everywhere because the classifier extrapolates without
 %       in-distribution awareness. Therefore, it is usually not comparable
 %       to the confidence of TopoART. (range: [0, 1]; default: 0.95)
-function classifyWithBackbone2dExample(confThreshTopoART, confThreshSoftmax)
+function classifyWithBackbone2dExample(useScaling, threshTA, threshSM)
 
-    narginchk(0, 2)
+    narginchk(0, 3)
     nargoutchk(0, 0)
 
     if nargin < 1
-        confThreshTopoART = 0.95;
-    end
-
-    if confThreshTopoART < 0 || confThreshTopoART > 1
-        error('confThreshTopoART must have a value from the interval [0, 1].')
+        useScaling = true;
     end
 
     if nargin < 2
-        confThreshSoftmax = 0.95;
+        if useScaling
+            threshTA = 0.98;
+        else
+            threshTA = 0.95;
+        end
     end
 
-    if confThreshSoftmax < 0 || confThreshSoftmax > 1
-        error('confThreshSoftmax must have a value from the interval [0, 1].')
+    if threshTA < 0 || threshTA > 1
+        error('threshTA must have a value from the interval [0, 1].')
+    end
+
+    if nargin < 3
+        threshSM = 0.95;
+    end
+
+    if threshSM < 0 || threshSM > 1
+        error('threshSM must have a value from the interval [0, 1].')
     end
 
     % raw input dimensionality
@@ -71,12 +85,12 @@ function classifyWithBackbone2dExample(confThreshTopoART, confThreshSoftmax)
     % vigilance parameter of the first module
     rho_a = 0.99;
 
-    % radial extent R required by Hypersphere TopoART-C, set according to
+    % radial extend R required by Hypersphere TopoART-C, set according to
     % R = sqrt(inputDimension * (dataMax - dataMin)^2) / 2
     % where (dataMax - dataMin) is the per-dimension range of the actual
-    % TopoART input (The backbone features are mapped to [0.1, 0.9] by
-    % scaleToInner below, so those inner-mapping bounds are used here.)
-    R = sqrt(featureLen * (0.9 - 0.1)^2) / 2;
+    % TopoART input. Both scaling and tanh-based normalization keep the
+    % input within [0, 1], so dataMax - dataMin = 1 is used here.
+    R = sqrt(featureLen) / 2;
 
     % Choose the wrapped (Hypersphere) TopoART-C network (The string is
     % resolved to a LibTopoART.Compatibility. Network enum inside the
@@ -107,13 +121,11 @@ function classifyWithBackbone2dExample(confThreshTopoART, confThreshSoftmax)
     trainX = samples(:, 1:2);
     trainT = samples(:, 3);   % class IDs in {1, 2}
 
-    % The final activation maps the backbone output into the inner
-    % interval [0.1, 0.9]. This is a hard requirement of TopoART-C: its
-    % inputs must lie in [0, 1], due to the use of complement-coding.
-    % Mapping into a strict inner sub-interval (instead
-    % of saturating tanh / sigmoid at the edges) leaves room for inputs
-    % that drift slightly outside the training distribution at inference.
-    scaleToInner = @(x) 0.5 + 0.4 * tanh(x);
+    if useScaling
+        scaleToInner = @(x) x;  % replaced after pretraining
+    else
+        scaleToInner = @(x) 0.5 + 0.5 * tanh(x);
+    end
 
     % set topology of the base network (backbone + head)
     backboneAndHead = [
@@ -124,7 +136,7 @@ function classifyWithBackbone2dExample(confThreshTopoART, confThreshSoftmax)
         reluLayer(                      Name = 'relu2')
         fullyConnectedLayer(featureLen, Name = 'features')
         % satisfy TopoART input range precondition
-        functionLayer(scaleToInner,     Name = 'features_act')
+        functionLayer(scaleToInner,     Name = 'scale_features')
         fullyConnectedLayer(2,          Name = 'fc_out')
         softmaxLayer(                   Name = 'softmax')
     ];
@@ -146,6 +158,20 @@ function classifyWithBackbone2dExample(confThreshTopoART, confThreshSoftmax)
 
     % strip the temporary classification head
     backbone = removeLayers(pretrained, {'fc_out', 'softmax'});
+
+    if useScaling
+        % fit element-wise linear scaling on backbone outputs
+        backbone = initialize(backbone);
+        rawFeatures = double(extractdata(predict(backbone, ...
+            dlarray(trainX', 'CB'))));
+        featureMin = min(rawFeatures, [], 2);
+        featureMax = max(rawFeatures, [], 2);
+        slope = 0.5 ./ (featureMax - featureMin);
+        offset = 0.25 - slope .* featureMin;
+        scaleToInner = @(x) min(max(slope .* x + offset, 0), 1);
+        backbone = replaceLayer(backbone, 'scale_features', ...
+            functionLayer(scaleToInner, Name = 'scale_features'));
+    end
 
     % set additional parameters, if required
     netArgs = {};
@@ -179,7 +205,7 @@ function classifyWithBackbone2dExample(confThreshTopoART, confThreshSoftmax)
         smY = predict(pretrained, dlarray(gridData', 'CB'));
         smY = double(extractdata(smY));
         [confSoftmax, classIDsSoftmax] = max(smY, [], 1);
-        classIDsSoftmax(confSoftmax < confThreshSoftmax) = 0;
+        classIDsSoftmax(confSoftmax < threshSM) = 0;
 
         plotResults('Classification Results (Original Softmax Head)', ...
             gridData, classIDsSoftmax, samples)
@@ -191,7 +217,7 @@ function classifyWithBackbone2dExample(confThreshTopoART, confThreshSoftmax)
     taY = double(extractdata(taY));
     classIDsTopoArt = taY(1, :);
     confidencesTopoArt = taY(2, :);
-    classIDsTopoArt(confidencesTopoArt < confThreshTopoART) = 0;
+    classIDsTopoArt(confidencesTopoArt < threshTA) = 0;
 
     plotResults('Classification Results (TopoART Head)', ...
         gridData, classIDsTopoArt, samples)
