@@ -25,7 +25,7 @@
 %   does NOT rescale features for you: the transform must be part of the
 %   network so that training and inference apply the identical mapping.
 %   Hypersphere TopoART-C is less strict wrt. the scaling interval. Larger
-%   intervals need to be reflected by larger values of the radial extent
+%   intervals need to be reflected by larger values of the radial extend
 %   parameter R.
 %
 %   Syntax
@@ -73,7 +73,7 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
         options.Verbose         (1, 1) logical = true
     end
 
-    % the backbone must have a single output that we can wire into the head
+    % The backbone must have a single output that we can wire into the head.
     if numel(backboneNet.OutputNames) ~= 1
         error(['backboneNet must have a single output. Found %d outputs. ' ...
             'Wire the desired feature tensor through a single output layer ' ...
@@ -82,7 +82,7 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
 
     % removeLayers drops the Initialized flag even when all remaining
     % learnables still hold trained values; running initialize is a no-op
-    % for parameters that are already set, so it is safe here
+    % for parameters that are already set, so it is safe here.
     if ~backboneNet.Initialized
         backboneNet = initialize(backboneNet);
     end
@@ -152,7 +152,7 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
         end
     end
 
-    % assemble the inference-ready network: backbone -> TopoART head.
+    % Assemble the inference-ready network: backbone -> TopoART head.
     % addLayers/connectLayers drop the Initialized flag in the same way
     % removeLayers does; the trained backbone learnables and the (state-
     % only) TopoART layer still carry their values, so re-running

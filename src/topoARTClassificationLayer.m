@@ -65,7 +65,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 %     Tau       - Learning steps between purges of candidate neurons
 %                 (positive integer; default: leave the .NET library's
 %                 default unchanged)
-%     R         - Radial extent parameter of Hypersphere TopoART
+%     R         - Radial extend parameter of Hypersphere TopoART
 %                 (positive scalar; Required when netType is
 %                 'Hypersphere_TopoART_C'; rejected for TopoART; set at
 %                 construction and stored as a layer property; cannot be
@@ -188,7 +188,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                 % netType is a string / char so the .NET assembly stays
                 % out of the default expression and can be loaded lazily
                 % via topoARTLayerBase.ensureLibLoaded (called from the
-                % constructor before delegating here)
+                % constructor before delegating here).
                 netType {mustBeTextScalar} = 'Fast_TopoART_C'
                 options.Name (1, :) char = 'topoART_C'
                 % Optional TopoART hyperparameters. Default [] keeps the
@@ -201,14 +201,14 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                 options.Nu = []
             end
 
-            % only TopoART classifiers are supported by this layer
+            % Only TopoART classifiers are supported by this layer.
             netTypeName = validatestring(netType, ...
                 {'TopoART_C', 'Fast_TopoART_C', 'Hypersphere_TopoART_C'});
             netType = LibTopoART.Compatibility.Network.(netTypeName);
             isHypersphere = strcmp(netTypeName, 'Hypersphere_TopoART_C');
 
             % R is meaningful only for Hypersphere TopoART-C; require it
-            % there and reject it for TopoART-C
+            % there and reject it for TopoART-C.
             if isHypersphere
 
                 if isempty(options.R)
@@ -235,7 +235,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             layer.NetType   = netType;
 
             % instantiate the wrapped .NET network (Hypersphere TopoART-C
-            % uses a different .NET overload that takes the radial extent
+            % uses a different .NET overload that takes the radial extend
             % R and a boolean (true = classification) instead of a netType
             % enum.)
             if isHypersphere
