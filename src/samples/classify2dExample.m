@@ -60,16 +60,16 @@ function classify2dExample(dataset, confThresh)
     % vigilance parameter of the first module
     rho_a = 0.95;
 
-    % radial extent R required by Hypersphere TopoART-C, set according to
+    % radial extend R required by Hypersphere TopoART-C, set according to
     % R = sqrt(inputDimension * (dataMax - dataMin)^2) / 2
     % where (dataMax - dataMin) is the per-dimension range of the actual
     % TopoART input (Inputs are rescaled to [0, 1] below, so the
     % post-rescale bounds 0 and 1 are used here (not the raw dataMin /
     % dataMax of the chosen dataset).)
-    R = sqrt(inputLen * (1 - 0)^2) / 2;
+    R = sqrt(inputLen * (1 - 0)^2) / 2; %#ok<NASGU>
 
-    % Choose the wrapped (Hypersphere) TopoART-C network (The string is
-    % resolved to a LibTopoART.Compatibility. Network enum inside the
+    % choose the wrapped (Hypersphere) TopoART-C network (The string is
+    % resolved to a LibTopoART.Compatibility.Network enum inside the
     % constructor, after the .NET assembly has been loaded on demand.)
     netType = 'Fast_TopoART_C';
 
@@ -105,7 +105,7 @@ function classify2dExample(dataset, confThresh)
     % set additional parameters, if required
     netArgs = {};
     if strcmp(netType, 'Hypersphere_TopoART_C')
-        netArgs = {'R', R};
+        netArgs = {'R', R}; %#ok<UNRCH>
     end
 
     % construct the custom layer (instantiates the wrapped .NET network)

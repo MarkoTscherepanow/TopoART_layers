@@ -70,16 +70,16 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
         % Tau - Number of presentations between candidate-neuron purges
         Tau
 
-        % R - Radial extent parameter of Hypersphere TopoART
+        % R - Radial extend parameter of Hypersphere TopoART
         % (positive scalar, empty for TopoART where the parameter does not
-        % exist.)
+        % exist)
         R
 
     end
 
     properties (Dependent)
 
-        % Nu - Maximum number of F2 neurons used for predictio
+        % Nu - Maximum number of F2 neurons used for prediction
         % (can be changed between subsequent prediction calls without
         % rebuilding the layer or the dlnetwork)
         Nu
@@ -176,7 +176,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             layer.Tau       = double(layer.Network.Tau);
 
             % R is only readable on Hypersphere TopoART variants; the
-            % .NET property throws InvalidCastException otherwise
+            % .NET property throws InvalidCastException otherwise.
             try
                 layer.R = double(layer.Network.R);
             catch

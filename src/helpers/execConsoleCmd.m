@@ -7,7 +7,7 @@
 %
 %   Input Arguments
 %     cmd - Command to be executed
-%     onlyWarn - If true, a failed command only issues a warning; if
+%     onlyWarn - If true, a failed command only issues a warning.
 %       (default: false)
 function execConsoleCmd(cmd, onlyWarn)
 

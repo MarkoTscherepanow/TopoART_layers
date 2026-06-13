@@ -9,7 +9,7 @@ function installLibs()
     nargoutchk(0, 0)
 
     % set the versions of the required libraries
-    fSharpCoreVersion = '10.1.300';
+    fSharpCoreVersion = '10.1.301';
     systemNumericsVectorsVersion = '4.6.1';
     libTopoARTVersion = '1.0.0';
     libTopoARTCompatibilityVersion = '0.7.0';
