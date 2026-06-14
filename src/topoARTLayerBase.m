@@ -2,8 +2,8 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 %TOPOARTLAYERBASE - Abstract base class for TopoART-based custom layers
 %   TOPOARTLAYERBASE collects the state and contracts that are common to
 %   all custom deep learning layers wrapping LibTopoART.Compatibility.
-%   Concrete subclasses instantiate the appropriate TopoART_i64d variant in
-%   their constructor and implement the methods learn and predict.
+%   Concrete subclasses instantiate the appropriate TopoART network class
+%   in their constructor and implement the methods learn and predict.
 %
 %   IMPORTANT: TopoART neural networks are NOT trained via gradient
 %   descent. They use incremental, online (sample-by-sample) ART-style
@@ -22,12 +22,13 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 %     ModuleNum  - Number of TopoART modules used by the wrapped network
 %     Rho_a      - Vigilance parameter of the first TopoART module
 %     NetType    - Network type from LibTopoART.Compatibility.Network
+%     IOType     - Interface type used only for input/output
 %
 %   Transient properties
-%     Network    - Handle to the wrapped LibTopoART.Compatibility.TopoART_i64d
-%                  instance, marked transient because .NET handles cannot
-%                  be serialised by MATLAB's deep learning framework. Use
-%                  the methods save and load to persist and restore the
+%     Network    - Handle to the wrapped LibTopoART.Compatibility TopoART
+%                  network instance, marked transient because .NET handles
+%                  cannot be serialised by MATLAB's deep learning
+%                  framework. Use save and load to persist and restore the
 %                  network state independently of the layer wrapper.
 %
 %   Methods that subclasses must implement
@@ -61,6 +62,13 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
         % NetType - Network type (LibTopoART.Compatibility.Network)
         NetType
 
+        % IOType - Interface type used only for input/output
+        % The MATLAB type of the data exchanged with the wrapped network.
+        % Allowed values: '' (the default) uses the floating-point
+        % interface type (double); 'uint8' suits image data, which is
+        % then passed as integers in [0, 255].
+        IOType (1, :) char = ''
+
         % Beta_sbm - Learning rate of the second-best matching neuron
         Beta_sbm
 
@@ -77,6 +85,13 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
     end
 
+    properties (Constant, Hidden)
+
+        IntType = 'int64'
+        FPType = 'double'
+
+    end
+
     properties (Dependent)
 
         % Nu - Maximum number of F2 neurons used for prediction
@@ -88,8 +103,8 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
     properties (Transient)
 
-        % Network - Handle to the wrapped LibTopoART.Compatibility.TopoART_i64d
-        % instance.
+        % Network - Handle to the wrapped LibTopoART.Compatibility
+        % network instance (TopoART_i64d or TopoART_i64du8).
         Network
 
     end
@@ -116,15 +131,29 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                 error(['Cannot set Nu before the wrapped network is ' ...
                     'constructed.'])
             end
-            layer.Network.Nu = int64(value);
+            layer.Network.Nu = cast(value, layer.IntType);
+        end
+
+        function layer = set.IOType(layer, value)
+            % IOType selects the wrapped network class, so it cannot be
+            % changed once that network exists; assigning the unchanged
+            % value stays allowed.
+            if ~isempty(layer.Network) && ~strcmp(value, layer.IOType)
+                error(['Cannot change IOType once the wrapped ' ...
+                    'network exists. Set IOType before calling ' ...
+                    'load on a default-constructed layer, or ' ...
+                    'construct the layer with the desired ' ...
+                    'IOType.'])
+            end
+            layer.IOType = value;
         end
 
         function save(layer, path)
-            %SAVE - Persist the wrapped network state to a binary file
-            %   SAVE(layer, path) writes the wrapped TopoART network's
-            %   state (categories, edges, hyperparameters) to path using
-            %   the .NET library's binary format. The layer wrapper
-            %   itself is not serialised; reload via the load method.
+        %SAVE - Persist the wrapped network state to a binary file
+        %   SAVE(layer, path) writes the wrapped TopoART network's
+        %   state (categories, edges, hyperparameters) to path using
+        %   the .NET library's binary format. The layer wrapper
+        %   itself is not serialised; reload via the load method.
 
             arguments
                 layer
@@ -139,21 +168,25 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
         end
 
         function layer = load(layer, path)
-            %LOAD - Replace wrapped network with one loaded from disk
-            %   layer = LOAD(layer, path) reads a binary network file
-            %   produced by save and assigns the resulting .NET instance
-            %   to layer.Network. The layer-side reflections of the
-            %   network's hyperparameters (InputLen, ModuleNum, Rho_a,
-            %   Beta_sbm, Phi, Tau, and R for Hypersphere variants) are
-            %   refreshed from the loaded network. NetType is not
-            %   refreshed because the wrapped .NET object does not
-            %   expose it; the caller is responsible for loading a
-            %   network compatible with the layer subclass's role
-            %   (e.g. a TopoART-C variant for topoARTClassificationLayer).
-            %
-            %   The return value must be assigned back to layer because
-            %   the layer is a value class and the wrapped .NET handle
-            %   is replaced by this method.
+        %LOAD - Replace wrapped network with one loaded from disk
+        %   layer = LOAD(layer, path) reads a binary network file
+        %   produced by save and assigns the resulting .NET instance
+        %   to layer.Network. The layer-side reflections of the
+        %   network's hyperparameters (InputLen, ModuleNum, Rho_a,
+        %   Beta_sbm, Phi, Tau, and R for Hypersphere variants) are
+        %   refreshed from the loaded network. NetType is not
+        %   refreshed because the wrapped .NET object does not
+        %   expose it; the caller is responsible for loading a
+        %   network compatible with the layer subclass's role
+        %   (e.g. a TopoART-C variant for topoARTClassificationLayer).
+        %   IOType is likewise honoured but not refreshed: it selects
+        %   which network class reads the file, so set it before calling
+        %   load to read a uint8 network into a default-constructed
+        %   layer.
+        %
+        %   The return value must be assigned back to layer because
+        %   the layer is a value class and the wrapped .NET handle
+        %   is replaced by this method.
 
             arguments
                 layer
@@ -165,8 +198,12 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                 error('Network file not found: %s', path)
             end
 
+            % The interface types select which network class reads the
+            % file.
+            networkClass = topoARTLayerBase.networkClassName( ...
+                layer.IntType, layer.FPType, layer.IOType);
             layer.Network = ...
-                LibTopoART.Compatibility.TopoART_i64d(path);
+                feval(['LibTopoART.Compatibility.' networkClass], path);
 
             layer.InputLen  = double(layer.Network.InputLen);
             layer.ModuleNum = double(layer.Network.ModuleNum);
@@ -199,13 +236,13 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
     methods (Static)
 
         function ensureLibLoaded()
-            %ENSURELIBLOADED - Load .NET DLL on first use
-            %   Locates the DLL relative to this base class file and loads
-            %   it via NET.addAssembly. A persistent guard makes subsequent
-            %   calls a no-op so subclass constructors can call this freely
-            %   on every instantiation. Errors out with a clear message if
-            %   .NET is unavailable or the DLL is missing (e.g. installLibs
-            %   has not been run).
+        %ENSURELIBLOADED - Load .NET DLL on first use
+        %   Locates the DLL relative to this base class file and loads
+        %   it via NET.addAssembly. A persistent guard makes subsequent
+        %   calls a no-op so subclass constructors can call this freely
+        %   on every instantiation. Errors out with a clear message if
+        %   .NET is unavailable or the DLL is missing (e.g. installLibs
+        %   has not been run).
 
             persistent loaded
             if ~isempty(loaded)
@@ -228,6 +265,45 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
             NET.addAssembly(dllPath);
             loaded = true;
+        end
+
+        function name = networkClassName(intType, fpType, ioType)
+        %NETWORKCLASSNAME - Build the TopoART network class name
+        %   Maps the three interface types to the short name of the
+        %   matching LibTopoART.Compatibility network class, e.g.
+        %   ('int64', 'double', 'uint8') -> 'TopoART_i64du8'. Unknown
+        %   types raise an error; whether the resulting class exists
+        %   is decided by the installed library at construction.
+
+            switch intType
+                case 'int64'
+                    intCode = 'i64';
+                otherwise
+                    error(['Unsupported IntType ''%s''. ' ...
+                        'Known: ''int64''.'], intType)
+            end
+
+            switch fpType
+                case 'double'
+                    floatCode = 'd';
+                otherwise
+                    error(['Unsupported FPType ''%s''. ' ...
+                        'Known: ''double''.'], fpType)
+            end
+
+            if isempty(ioType)
+                ioCode = '';
+            else
+                switch ioType
+                    case 'uint8'
+                        ioCode = 'u8';
+                    otherwise
+                        error(['Unsupported IOType ''%s''. ' ...
+                            'Known: '''' (none), ''uint8''.'], ioType)
+                end
+            end
+
+            name = ['TopoART_' intCode floatCode ioCode];
         end
 
     end

@@ -29,7 +29,7 @@ From the [src/](src/) folder, install the .NET dependencies once:
 installLibs
 ```
 
-This downloads `FSharp.Core.dll`, `LibTopoART.dll`, and `LibTopoART.Compatibility.dll` into `src/lib/`. The layer constructors load the assembly on demand.
+This downloads `LibTopoART.dll` and `LibTopoART.Compatibility.dll` together with their further dependencies (`FSharp.Core.dll` and `System.Numerics.Vectors.dll`) into `src/lib/`. The layer constructors load the assembly on demand.
 
 ### Standalone classification example
 
