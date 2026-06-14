@@ -1,11 +1,13 @@
 classdef topoARTClassificationLayer < topoARTLayerBase
 %TOPOARTCLASSIFICATIONLAYER - TopoART-based classification layer
 %   TOPOARTCLASSIFICATIONLAYER wraps a TopoART-C or Hypersphere TopoART-C
-%   neural network from LibTopoART.Compatibility (class TopoART_i64d) and
-%   exposes it as a custom MATLAB deep learning layer. It is intended to be
-%   used as a classification head, either standalone (directly behind a
-%   featureInputLayer) or after a backbone whose features are fed into
-%   (Hypersphere) TopoART-C.
+%   neural network from LibTopoART.Compatibility and exposes it as a
+%   custom MATLAB deep learning layer. The wrapped class is selected by
+%   IOType. The default gives TopoART_i64d; IOType = 'uint8' gives
+%   TopoART_i64du8, whose uint8 input/output suits image data. It
+%   is intended to be used as a classification head, either standalone
+%   (directly behind a featureInputLayer) or after a backbone whose
+%   features are fed into (Hypersphere) TopoART-C.
 %
 %   IMPORTANT: TopoART neural networks are NOT trained via gradient
 %   descent. They use incremental, online (sample-by-sample) ART-style
@@ -16,14 +18,16 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 %
 %   INPUT RANGE: For TopoART-C, every element of every input vector must
 %   lie in [0, 1]. Mapping inputs into an inner sub-interval such as
-%   [0.1, 0.9] is recommended, so that inputs slightly outside the training
-%   distribution at inference time still fall inside [0, 1]. The rescaling
-%   may be a fixed transform decided before training (e.g. sigmoidLayer,
-%   or functionLayer(@(x) 0.5 + 0.4*tanh(x))) or a data-derived
-%   calibration. Make sure that training and inference use the identical
-%   mapping. Hypersphere TopoART is less strict wrt. the scaling interval.
-%   Larger intervals need to be reflected by larger values of the radial
-%   extent parameter R.
+%   [0.1, 0.9] is recommended, so that inputs slightly outside the
+%   training distribution at inference time still fall inside [0, 1].
+%   The rescaling may be a fixed transform decided before training
+%   (e.g. sigmoidLayer, or functionLayer(@(x) 0.5 + 0.4*tanh(x))) or a
+%   data-derived calibration. Make sure that training and inference use
+%   the identical mapping. Hypersphere TopoART is less strict wrt. the
+%   scaling interval. Larger intervals need to be reflected by larger
+%   values of the radial extend parameter R. With IOType 'uint8' the
+%   wrapped network expects integer input in [0, 255] (scaled to [0, 1]
+%   internally).
 %
 %   The wrapped .NET object is stored as a handle reference in the property
 %   Network (inherited from topoARTLayerBase). See topoARTLayerBase for
@@ -54,6 +58,10 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 %     netType   - Network type, given as a string or char vector
 %                 Allowed values: 'TopoART_C', 'Fast_TopoART_C', or
 %                 'Hypersphere_TopoART_C'. (default: 'Fast_TopoART_C')
+%     IOType    - Optional interface type used only for input/output.
+%                 When empty, input/output uses the fixed floating-point
+%                 interface type (double); set it to 'uint8' for uint8
+%                 input/output. (default: '')
 %     Name      - Layer name (default: 'topoART_C')
 %     Beta_sbm  - Learning rate of the second-best matching neuron
 %                 Beta_sbm controls partial adaptation of the
@@ -113,14 +121,14 @@ classdef topoARTClassificationLayer < topoARTLayerBase
         end
 
         function Z = predict(layer, X)
-            %PREDICT - Forward pass through the wrapped TopoART-C network
-            %   X is the unformatted dlarray for the layer input (channels
-            %   x batch, with C == InputLen). The returned unformatted
-            %   dlarray has two channels per sample: the predicted class ID
-            %   (channel 1) and the corresponding confidence in [0, 1]
-            %   (channel 2). A class ID of 0 indicates that the sample lies
-            %   outside any known category. The dlnetwork propagates the
-            %   input format ('CB') to the output automatically.
+        %PREDICT - Forward pass through the wrapped TopoART-C network
+        %   X is the unformatted dlarray for the layer input (channels
+        %   x batch, with C == InputLen). The returned unformatted
+        %   dlarray has two channels per sample: the predicted class ID
+        %   (channel 1) and the corresponding confidence in [0, 1]
+        %   (channel 2). A class ID of 0 indicates that the sample lies
+        %   outside any known category. The dlnetwork propagates the
+        %   input format ('CB') to the output automatically.
 
             if isempty(layer.Network)
                 error(['Layer is uninitialised. Construct with ' ...
@@ -128,7 +136,10 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                     'LAYER = LAYER.LOAD(PATH) before predict.'])
             end
 
-            inputs = double(extractdata(X));
+            % cast to the network's input/output interface type (e.g.
+            % uint8); this also selects the matching .NET Classify
+            % overload
+            inputs = cast(extractdata(X), layer.inputOutputType());
             nBatch = size(inputs, 2);
             mask = false(1, layer.InputLen);
 
@@ -140,14 +151,15 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                 confidences(i) = double(pred.confidence);
             end
 
-            Z = dlarray(cast([classIDs; confidences], 'like', extractdata(X)));
+            Z = dlarray(cast([classIDs; confidences], 'like', ...
+                extractdata(X)));
         end
 
         function learn(layer, X, T)
-            %LEARN - Incremental training of the wrapped TopoART-C network
-            %   LEARN(layer, X, T) presents the rows of X (size
-            %   N-by-InputLen) together with the class IDs in T (size
-            %   N-by-1) to the wrapped TopoART-C network.
+        %LEARN - Incremental training of the wrapped TopoART-C network
+        %   LEARN(layer, X, T) presents the rows of X (size
+        %   N-by-InputLen) together with the class IDs in T (size
+        %   N-by-1) to the wrapped TopoART-C network.
 
             arguments
                 layer
@@ -170,12 +182,28 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                     'of T (%d).'], size(X, 1), length(T))
             end
 
-            layer.Network.Learn(X, int64(T));
+            % cast to the interface types so the correct .NET Learn
+            % overload is selected: X to the input/output type and the
+            % class IDs to the integer type
+            layer.Network.Learn(cast(X, layer.inputOutputType()), ...
+                cast(T, layer.IntType));
         end
 
     end
 
     methods (Access = private)
+
+        function typeName = inputOutputType(layer)
+        %INPUTOUTPUTTYPE - MATLAB type used for input/output
+        %   The type is IOType when set, otherwise the floating-point
+        %   interface type.
+
+            typeName = layer.IOType;
+            if isempty(typeName)
+                typeName = layer.FPType;
+            end
+
+        end
 
         function layer = initialise_(layer, inputLen, moduleNum, ...
                 rho_a, netType, options)
@@ -199,6 +227,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                 options.Tau = []
                 options.R = []
                 options.Nu = []
+                options.IOType (1, :) char = ''
             end
 
             % Only TopoART classifiers are supported by this layer.
@@ -206,6 +235,10 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                 {'TopoART_C', 'Fast_TopoART_C', 'Hypersphere_TopoART_C'});
             netType = LibTopoART.Compatibility.Network.(netTypeName);
             isHypersphere = strcmp(netTypeName, 'Hypersphere_TopoART_C');
+
+            % resolve (and validate) the network class
+            networkClass = topoARTLayerBase.networkClassName( ...
+                layer.IntType, layer.FPType, options.IOType);
 
             % R is meaningful only for Hypersphere TopoART-C; require it
             % there and reject it for TopoART-C.
@@ -227,25 +260,46 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             layer.Name = options.Name;
             layer.Description = sprintf( ...
                 ['TopoART-C classifier (%d-d input, %d modules, ' ...
-                'rho_a = %g)'], inputLen, moduleNum, rho_a);
+                'rho_a = %g, %s)'], inputLen, moduleNum, rho_a, ...
+                networkClass);
 
             layer.InputLen  = inputLen;
             layer.ModuleNum = moduleNum;
             layer.Rho_a     = rho_a;
             layer.NetType   = netType;
+            layer.IOType    = options.IOType;
 
             % instantiate the wrapped .NET network (Hypersphere TopoART-C
-            % uses a different .NET overload that takes the radial extend
+            % uses a different .NET overload taking the radial extend
             % R and a boolean (true = classification) instead of a netType
             % enum.)
+            className = ['LibTopoART.Compatibility.' networkClass];
+            intType   = layer.IntType;
+            floatType = layer.FPType;
+
+            try
+                if isHypersphere
+                    layer.Network = feval(className, ...
+                        cast(inputLen, intType), ...
+                        cast(moduleNum, intType), ...
+                        cast(rho_a, floatType), ...
+                        cast(options.R, floatType), true);
+                else
+                    layer.Network = feval(className, ...
+                        cast(inputLen, intType), ...
+                        cast(moduleNum, intType), ...
+                        cast(rho_a, floatType), netType);
+                end
+            catch constructErr
+                error('topoARTClassificationLayer:networkUnavailable', ...
+                    ['Could not construct %s for netType ''%s''.' ...
+                    '\n\nUnderlying error:\n' ...
+                    '%s'], networkClass, netTypeName, ...
+                    constructErr.message)
+            end
+
             if isHypersphere
-                layer.Network = LibTopoART.Compatibility.TopoART_i64d( ...
-                    int64(inputLen), int64(moduleNum), rho_a, ...
-                    double(options.R), true);
                 layer.R = double(options.R);
-            else
-                layer.Network = LibTopoART.Compatibility.TopoART_i64d( ...
-                    int64(inputLen), int64(moduleNum), rho_a, netType);
             end
 
             % apply optional hyperparameters to the wrapped network before
@@ -253,21 +307,21 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             if ~isempty(options.Beta_sbm)
                 mustBeScalarOrEmpty(options.Beta_sbm)
                 mustBeInRange(options.Beta_sbm, 0, 1)
-                layer.Network.Beta_sbm = double(options.Beta_sbm);
+                layer.Network.Beta_sbm = cast(options.Beta_sbm, floatType);
             end
 
             if ~isempty(options.Phi)
                 mustBeScalarOrEmpty(options.Phi)
                 mustBeInteger(options.Phi)
                 mustBePositive(options.Phi)
-                layer.Network.Phi = int64(options.Phi);
+                layer.Network.Phi = cast(options.Phi, intType);
             end
 
             if ~isempty(options.Tau)
                 mustBeScalarOrEmpty(options.Tau)
                 mustBeInteger(options.Tau)
                 mustBePositive(options.Tau)
-                layer.Network.Tau = int64(options.Tau);
+                layer.Network.Tau = cast(options.Tau, intType);
             end
 
             % Nu: the base-class setter validates and writes through to
