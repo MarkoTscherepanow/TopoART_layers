@@ -1,8 +1,7 @@
 %CLASSIFY2DEXAMPLE - Classification sample using topoARTClassificationLayer
-%   ATTENTION: This function can only be executed on Windows or macOS
-%   systems and requires .NET Framework 4.7.2 or higher, or .NET 6.0 or
-%   higher. Furthermore, installLibs (in the parent src folder) must be run
-%   before CLASSIFY2DEXAMPLE can be used.
+%   ATTENTION: This function requires .NET Framework 4.7.2 or higher, or
+%   .NET 6.0 or higher. Furthermore, installLibs (in the parent src folder)
+%   must be run before CLASSIFY2DEXAMPLE can be used.
 %
 %   CLASSIFY2DEXAMPLE demonstrates the use of the custom deep learning
 %   layer topoARTClassificationLayer. A minimal dlnetwork is built that
@@ -46,7 +45,7 @@ function classify2dExample(dataset, confThresh)
     if nargin < 2
         confThresh = 0.96;
     end
-   
+
     if confThresh < 0 || confThresh > 1
         error('confThresh must have a value from the interval [0, 1].')
     end
