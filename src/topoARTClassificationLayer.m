@@ -99,7 +99,39 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 %                          (inherited from topoARTLayerBase; must be
 %                          assigned back due to value-class semantics)
 
+    properties (Dependent)
+
+        % Nu - Maximum number of F2 neurons used for prediction
+        % (can be changed between subsequent prediction calls without
+        % rebuilding the layer or the dlnetwork)
+        Nu
+
+    end
+
     methods
+
+        function value = get.Nu(layer)
+            if isempty(layer.Network)
+                value = [];
+            else
+                value = double(layer.Network.Nu);
+            end
+        end
+
+        function layer = set.Nu(layer, value)
+            mustBeScalarOrEmpty(value)
+            if isempty(value)
+                return
+            end
+            mustBeNumeric(value)
+            mustBeInteger(value)
+            mustBeNonnegative(value)
+            if isempty(layer.Network)
+                error(['Cannot set Nu before the wrapped network is ' ...
+                    'constructed.'])
+            end
+            layer.Network.Nu = cast(value, layer.IntType);
+        end
 
         function layer = topoARTClassificationLayer(varargin)
 
@@ -117,7 +149,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                 return
             end
 
-            layer = layer.initialise_(varargin{:});
+            layer = layer.initialise(varargin{:});
         end
 
         function Z = predict(layer, X)
@@ -193,19 +225,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 
     methods (Access = private)
 
-        function typeName = inputOutputType(layer)
-        %INPUTOUTPUTTYPE - MATLAB type used for input/output
-        %   The type is IOType when set, otherwise the floating-point
-        %   interface type.
-
-            typeName = layer.IOType;
-            if isempty(typeName)
-                typeName = layer.FPType;
-            end
-
-        end
-
-        function layer = initialise_(layer, inputLen, moduleNum, ...
+        function layer = initialise(layer, inputLen, moduleNum, ...
                 rho_a, netType, options)
 
             arguments
@@ -324,7 +344,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                 layer.Network.Tau = cast(options.Tau, intType);
             end
 
-            % Nu: the base-class setter validates and writes through to
+            % Nu: the setter validates and writes through to
             % layer.Network.Nu (which is also where the dependent getter
             % reads from), so no explicit reflection step is needed.
             if ~isempty(options.Nu)

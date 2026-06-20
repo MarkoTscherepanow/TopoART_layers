@@ -47,6 +47,17 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 %                          refresh the layer-side cached
 %                          hyperparameters. Must be assigned back
 %                          because the layer is a value class.
+%     resetAdaptationState(layer)
+%                        - Clear the tracked adaptation state before an
+%                          epoch of incremental training.
+%     hasPermanentAdaptation(layer) / hasCandidateAdaptation(layer)
+%                        - Check for any permanent or candidate adaptation
+%                          since the last resetAdaptationState call; the
+%                          permanent check lets training stop early.
+%     has<Permanent|Candidate><Node|Weight|Edge>Adaptation(layer)
+%                        - Check for a specific kind of adaptation: a node,
+%                          weight, or edge change of a permanent or
+%                          candidate neuron.
 
     properties
 
@@ -92,15 +103,6 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
     end
 
-    properties (Dependent)
-
-        % Nu - Maximum number of F2 neurons used for prediction
-        % (can be changed between subsequent prediction calls without
-        % rebuilding the layer or the dlnetwork)
-        Nu
-
-    end
-
     properties (Transient)
 
         % Network - Handle to the wrapped LibTopoART.Compatibility
@@ -111,34 +113,14 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
     methods
 
-        function value = get.Nu(layer)
-            if isempty(layer.Network)
-                value = [];
-            else
-                value = double(layer.Network.Nu);
-            end
-        end
-
-        function layer = set.Nu(layer, value)
-            mustBeScalarOrEmpty(value)
-            if isempty(value)
-                return
-            end
-            mustBeNumeric(value)
-            mustBeInteger(value)
-            mustBeNonnegative(value)
-            if isempty(layer.Network)
-                error(['Cannot set Nu before the wrapped network is ' ...
-                    'constructed.'])
-            end
-            layer.Network.Nu = cast(value, layer.IntType);
-        end
-
         function layer = set.IOType(layer, value)
             % IOType selects the wrapped network class, so it cannot be
             % changed once that network exists; assigning the unchanged
-            % value stays allowed.
-            if ~isempty(layer.Network) && ~strcmp(value, layer.IOType)
+            % value stays allowed. The cross-property Network read is
+            % safe (and the MCSUP warning suppressed) because IOType is
+            % only assigned before the network is constructed.
+            networkExists = ~isempty(layer.Network); %#ok<MCSUP>
+            if networkExists && ~strcmp(value, layer.IOType)
                 error(['Cannot change IOType once the wrapped ' ...
                     'network exists. Set IOType before calling ' ...
                     'load on a default-constructed layer, or ' ...
@@ -205,12 +187,185 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             layer.Network = ...
                 feval(['LibTopoART.Compatibility.' networkClass], path);
 
-            layer.InputLen  = double(layer.Network.InputLen);
             layer.ModuleNum = double(layer.Network.ModuleNum);
             layer.Rho_a     = double(layer.Network.Rho_a);
             layer.Beta_sbm  = double(layer.Network.Beta_sbm);
             layer.Phi       = double(layer.Network.Phi);
             layer.Tau       = double(layer.Network.Tau);
+
+            % Refresh the length and category-specific properties. The
+            % default reflects InputLen and the radial extend R; subclasses
+            % whose wrapped network has a different input structure (e.g.
+            % two key vectors) override refreshNetworkProperties.
+            layer = layer.refreshNetworkProperties();
+        end
+
+        function resetAdaptationState(layer)
+        %RESETADAPTATIONSTATE - Clear the tracked adaptation state
+        %   Reset the recorded adaptation state, covering the node,
+        %   weight, and edge changes of both permanent and candidate
+        %   neurons. Call it before an epoch of incremental training; the
+        %   has...Adaptation predicates then report which kinds of
+        %   adaptation that epoch caused, for example to stop training
+        %   once the permanent network has stabilised.
+
+            if isempty(layer.Network)
+                error(['Cannot reset the adaptation state before the ' ...
+                    'wrapped network is constructed.'])
+            end
+            layer.Network.ResetAdaptationState();
+        end
+
+        function adapted = hasPermanentAdaptation(layer, epsilon)
+        %HASPERMANENTADAPTATION - Check for any permanent adaptation
+        %   Returns true if a permanent node/edge was added or a permanent
+        %   weight changed by more than epsilon since the last
+        %   resetAdaptationState call; lets multi-epoch training stop once
+        %   it is false. (epsilon default: 0.001)
+
+            arguments
+                layer
+                epsilon (1, 1) double {mustBePositive} = 0.001
+            end
+
+            mask = LibTopoART.AdaptationState ...
+                .ANY_PERMANENT_ADAPTATION_MASK;
+            adapted = layer.adaptationMatches(mask, epsilon);
+        end
+
+        function adapted = hasCandidateAdaptation(layer, epsilon)
+        %HASCANDIDATEADAPTATION - Check for any candidate adaptation
+        %   Returns true if a candidate node/edge was added or removed or
+        %   a candidate weight changed by more than epsilon since the last
+        %   resetAdaptationState call. (epsilon default: 0.001)
+
+            arguments
+                layer
+                epsilon (1, 1) double {mustBePositive} = 0.001
+            end
+
+            mask = LibTopoART.AdaptationState ...
+                .ANY_NONPERMANENT_ADAPTATION_MASK;
+            adapted = layer.adaptationMatches(mask, epsilon);
+        end
+
+        function adapted = hasPermanentNodeAdaptation(layer)
+        %HASPERMANENTNODEADAPTATION - Check for an added permanent node
+        %   Returns true if a permanent node was added since the last
+        %   resetAdaptationState call. (Permanent nodes are never removed.)
+
+            mask = LibTopoART.AdaptationState.ADDED_PERMANENT_NODE;
+            adapted = layer.adaptationMatches(mask);
+        end
+
+        function adapted = hasPermanentWeightAdaptation(layer, epsilon)
+        %HASPERMANENTWEIGHTADAPTATION - Check for a permanent weight change
+        %   Returns true if a permanent weight changed by more than epsilon
+        %   since the last resetAdaptationState call. (default: 0.001)
+
+            arguments
+                layer
+                epsilon (1, 1) double {mustBePositive} = 0.001
+            end
+
+            mask = LibTopoART.AdaptationState.ADAPTED_PERMANENT_WEIGHT;
+            adapted = layer.adaptationMatches(mask, epsilon);
+        end
+
+        function adapted = hasPermanentEdgeAdaptation(layer)
+        %HASPERMANENTEDGEADAPTATION - Check for an added permanent edge
+        %   Returns true if a permanent edge was added since the last
+        %   resetAdaptationState call. (Permanent edges are never removed.)
+
+            mask = LibTopoART.AdaptationState.ADDED_PERMANENT_EDGE;
+            adapted = layer.adaptationMatches(mask);
+        end
+
+        function adapted = hasCandidateNodeAdaptation(layer)
+        %HASCANDIDATENODEADAPTATION - Check for a candidate node change
+        %   Returns true if a candidate node was added or removed since
+        %   the last resetAdaptationState call.
+
+            mask = bitor( ...
+                LibTopoART.AdaptationState.ADDED_NODE_CANDIDATE, ...
+                LibTopoART.AdaptationState.REMOVED_NODE_CANDIDATE);
+            adapted = layer.adaptationMatches(mask);
+        end
+
+        function adapted = hasCandidateWeightAdaptation(layer, epsilon)
+        %HASCANDIDATEWEIGHTADAPTATION - Check for a candidate weight change
+        %   Returns true if a candidate weight changed by more than epsilon
+        %   since the last resetAdaptationState call. (default: 0.001)
+
+            arguments
+                layer
+                epsilon (1, 1) double {mustBePositive} = 0.001
+            end
+
+            mask = LibTopoART.AdaptationState.ADAPTED_NONPERMANENT_WEIGHT;
+            adapted = layer.adaptationMatches(mask, epsilon);
+        end
+
+        function adapted = hasCandidateEdgeAdaptation(layer)
+        %HASCANDIDATEEDGEADAPTATION - Check for a candidate edge change
+        %   Returns true if a candidate edge was added or removed since
+        %   the last resetAdaptationState call.
+
+            mask = bitor( ...
+                LibTopoART.AdaptationState.ADDED_EDGE_CANDIDATE, ...
+                LibTopoART.AdaptationState.REMOVED_EDGE_CANDIDATE);
+            adapted = layer.adaptationMatches(mask);
+        end
+
+    end
+
+    methods (Access = private)
+
+        function adapted = adaptationMatches(layer, mask, epsilon)
+        %ADAPTATIONMATCHES - Test the adaptation state against a flag mask
+        %   Returns true if any flag in mask is set in the adaptation
+        %   state recorded since the last resetAdaptationState call. When
+        %   epsilon is given, GetAdaptationState uses it as the
+        %   weight-change threshold; otherwise the library default
+        %   applies. The threshold does not affect node and edge flags.
+
+            if isempty(layer.Network)
+                error(['Cannot query the adaptation state before the ' ...
+                    'wrapped network is constructed.'])
+            end
+
+            if nargin < 3
+                state = layer.Network.GetAdaptationState();
+            else
+                state = layer.Network.GetAdaptationState(epsilon);
+            end
+            adapted = bitand(state, mask) ~= ...
+                LibTopoART.AdaptationState.NO_ADAPTATION;
+        end
+
+    end
+
+    methods (Access = protected)
+
+        function typeName = inputOutputType(layer)
+        %INPUTOUTPUTTYPE - MATLAB type used for input/output
+        %   The type is IOType when set, otherwise the floating-point
+        %   interface type.
+
+            typeName = layer.IOType;
+            if isempty(typeName)
+                typeName = layer.FPType;
+            end
+        end
+
+        function layer = refreshNetworkProperties(layer)
+        %REFRESHNETWORKPROPERTIES - Refresh variant-specific properties
+        %   Called by load after the shared hyperparameters have been
+        %   refreshed from the wrapped network. The default reflects
+        %   InputLen and the Hypersphere radial extend R. Subclasses whose
+        %   wrapped network has a different input structure override this.
+
+            layer.InputLen = double(layer.Network.InputLen);
 
             % R is only readable on Hypersphere TopoART variants; the
             % .NET property throws InvalidCastException otherwise.
@@ -230,7 +385,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
         %   to the appropriate .NET Learn overload. The .NET network is
         %   adapted through its handle reference.
         learn(layer, X, T)
-    
+
     end
 
     methods (Static)
