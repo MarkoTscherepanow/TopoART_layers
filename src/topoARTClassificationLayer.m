@@ -110,6 +110,25 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 
     methods
 
+        function layer = topoARTClassificationLayer(varargin)
+
+            % ensure the .NET library is loaded before any LibTopoART.*
+            % type is referenced (idempotent across constructor calls)
+            topoARTLayerBase.ensureLibLoaded()
+
+            % default constructor: produce an uninitialised layer that
+            % the caller is expected to populate via load(path) before
+            % training or prediction, no .NET network is allocated
+            if nargin == 0
+                layer.Name = 'topoART_C';
+                layer.Description = ...
+                    'TopoART-C classifier (uninitialised)';
+                return
+            end
+
+            layer = layer.initialise(varargin{:});
+        end
+
         function value = get.Nu(layer)
             if isempty(layer.Network)
                 value = [];
@@ -133,26 +152,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             layer.Network.Nu = cast(value, layer.IntType);
         end
 
-        function layer = topoARTClassificationLayer(varargin)
-
-            % ensure the .NET library is loaded before any LibTopoART.*
-            % type is referenced (idempotent across constructor calls)
-            topoARTLayerBase.ensureLibLoaded()
-
-            % default constructor: produce an uninitialised layer that
-            % the caller is expected to populate via load(path) before
-            % training or prediction, no .NET network is allocated
-            if nargin == 0
-                layer.Name = 'topoART_C';
-                layer.Description = ...
-                    'TopoART-C classifier (uninitialised)';
-                return
-            end
-
-            layer = layer.initialise(varargin{:});
-        end
-
-        function Z = predict(layer, X)
+        function prediction = predict(layer, X)
         %PREDICT - Forward pass through the wrapped TopoART-C network
         %   X is the unformatted dlarray for the layer input (channels
         %   x batch, with C == InputLen). The returned unformatted
@@ -178,24 +178,26 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             classIDs    = zeros(1, nBatch);
             confidences = zeros(1, nBatch);
             for i = 1:nBatch
-                pred = layer.Network.Classify(inputs(:, i)', mask);
-                classIDs(i)    = double(pred.classID);
-                confidences(i) = double(pred.confidence);
+                classification = ...
+                    layer.Network.Classify(inputs(:, i)', mask);
+                classIDs(i)    = double(classification.classID);
+                confidences(i) = double(classification.confidence);
             end
 
-            Z = dlarray(cast([classIDs; confidences], 'like', ...
-                extractdata(X)));
+            prediction = dlarray(cast([classIDs; confidences], ...
+                'like', extractdata(X)));
         end
 
         function learn(layer, X, T)
         %LEARN - Incremental training of the wrapped TopoART-C network
         %   LEARN(layer, X, T) presents the rows of X (size
         %   N-by-InputLen) together with the class IDs in T (size
-        %   N-by-1) to the wrapped TopoART-C network.
+        %   N-by-1) to the wrapped TopoART-C network. X may be of any
+        %   numeric type; pass uint8 directly when IOType is 'uint8'.
 
             arguments
                 layer
-                X (:, :) double
+                X (:, :) {mustBeNumeric}
                 T (:, 1) double {mustBeInteger, mustBeNonnegative}
             end
 
