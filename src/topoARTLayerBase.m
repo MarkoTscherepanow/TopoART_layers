@@ -319,32 +319,6 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
     end
 
-    methods (Access = private)
-
-        function adapted = adaptationMatches(layer, mask, epsilon)
-        %ADAPTATIONMATCHES - Test the adaptation state against a flag mask
-        %   Returns true if any flag in mask is set in the adaptation
-        %   state recorded since the last resetAdaptationState call. When
-        %   epsilon is given, GetAdaptationState uses it as the
-        %   weight-change threshold; otherwise the library default
-        %   applies. The threshold does not affect node and edge flags.
-
-            if isempty(layer.Network)
-                error(['Cannot query the adaptation state before the ' ...
-                    'wrapped network is constructed.'])
-            end
-
-            if nargin < 3
-                state = layer.Network.GetAdaptationState();
-            else
-                state = layer.Network.GetAdaptationState(epsilon);
-            end
-            adapted = bitand(state, mask) ~= ...
-                LibTopoART.AdaptationState.NO_ADAPTATION;
-        end
-
-    end
-
     methods (Access = protected)
 
         function typeName = inputOutputType(layer)
@@ -374,6 +348,32 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             catch
                 layer.R = [];
             end
+        end
+
+    end
+
+    methods (Access = private)
+
+        function adapted = adaptationMatches(layer, mask, epsilon)
+        %ADAPTATIONMATCHES - Test the adaptation state against a flag mask
+        %   Returns true if any flag in mask is set in the adaptation
+        %   state recorded since the last resetAdaptationState call. When
+        %   epsilon is given, GetAdaptationState uses it as the
+        %   weight-change threshold; otherwise the library default
+        %   applies. The threshold does not affect node and edge flags.
+
+            if isempty(layer.Network)
+                error(['Cannot query the adaptation state before the ' ...
+                    'wrapped network is constructed.'])
+            end
+
+            if nargin < 3
+                state = layer.Network.GetAdaptationState();
+            else
+                state = layer.Network.GetAdaptationState(epsilon);
+            end
+            adapted = bitand(state, mask) ~= ...
+                LibTopoART.AdaptationState.NO_ADAPTATION;
         end
 
     end
