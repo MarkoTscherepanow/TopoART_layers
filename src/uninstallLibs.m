@@ -12,21 +12,20 @@ function uninstallLibs()
         error('OS is not supported')
     end
 
-    % set path for helper functions; restore via onCleanup so the
-    % user's path is reverted even on error or Ctrl+C
-    basePath = fileparts(mfilename('fullpath'));
-    oldPath = addpath([basePath filesep 'helpers' filesep]);
-    pathCleanup = onCleanup(@() path(oldPath)); %#ok<NASGU>
-
     % remove the folders 'download' and 'lib'
     disp('Cleanup')
 
-    if ispc
-        execConsoleCmd('rmdir /Q /S download', true)
-        execConsoleCmd('rmdir /Q /S lib', true)
-    else
-        execConsoleCmd('rm -rf download', true)
-        execConsoleCmd('rm -rf lib', true)
+    removeFolder('download')
+    removeFolder('lib')
+
+end
+
+function removeFolder(folder)
+%REMOVEFOLDER - Remove a folder and its contents, warning if it fails
+
+    [status, message] = rmdir(folder, 's');
+    if ~status
+        warning('%s', message)
     end
 
 end

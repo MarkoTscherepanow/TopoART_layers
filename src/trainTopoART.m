@@ -121,7 +121,8 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
             % autograd tape is not built
             features = predict(backboneNet, X);
 
-            % reshape features to N-by-InputLen rows for the .NET Learn API
+            % reshape features to sampleNum-by-InputLen rows for the
+            % .NET Learn API
             featuresRaw = double(extractdata(features));
             if size(featuresRaw, 1) ~= topoArtLayer.InputLen
                 error(['Backbone output channel count (%d) does not match ' ...
@@ -132,7 +133,7 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
 
             % targets: 'CB' -> rows-are-samples; vector targets become a
             % column vector (TopoART-C class IDs), matrix targets become
-            % an N-by-D matrix (TopoART-R outputs)
+            % a sampleNum-by-targetLen matrix
             targetsRaw = double(extractdata(T));
             if isrow(targetsRaw) || iscolumn(targetsRaw)
                 targetsArg = targetsRaw(:);
@@ -162,6 +163,7 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
     if ~net.Initialized
         net = initialize(net);
     end
+
 end
 
 function [Xb, Tb] = defaultRowsToCB(dataX, dataT)
@@ -171,4 +173,5 @@ function [Xb, Tb] = defaultRowsToCB(dataX, dataT)
 
     Xb = cat(1, dataX{:})';
     Tb = cat(1, dataT{:})';
+
 end

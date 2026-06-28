@@ -86,10 +86,10 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 %
 %   Methods
 %     learn(X, T)        - Train the wrapped TopoART-C network online on
-%                          the rows of X (size N-by-inputLen) using class
-%                          IDs T (size N-by-1, integer >= 0). Phases of
-%                          training and prediction may be mixed
-%                          arbitrarily.
+%                          the rows of X (size sampleNum-by-inputLen)
+%                          using class IDs T (size sampleNum-by-1,
+%                          integer >= 0). Phases of training and
+%                          prediction may be mixed arbitrarily.
 %     predict            - Forward pass producing a 2-channel output
 %                          [classID; confidence] in 'CB' format
 %     save(path)         - Persist the wrapped network to a binary file
@@ -127,6 +127,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             end
 
             layer = layer.initialise(varargin{:});
+
         end
 
         function value = get.Nu(layer)
@@ -172,12 +173,12 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             % uint8); this also selects the matching .NET Classify
             % overload
             inputs = cast(extractdata(X), layer.inputOutputType());
-            nBatch = size(inputs, 2);
+            sampleNum = size(inputs, 2);
             mask = false(1, layer.InputLen);
 
-            classIDs    = zeros(1, nBatch);
-            confidences = zeros(1, nBatch);
-            for i = 1:nBatch
+            classIDs    = zeros(1, sampleNum);
+            confidences = zeros(1, sampleNum);
+            for i = 1:sampleNum
                 classification = ...
                     layer.Network.Classify(inputs(:, i)', mask);
                 classIDs(i)    = double(classification.classID);
@@ -186,14 +187,16 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 
             prediction = dlarray(cast([classIDs; confidences], ...
                 'like', extractdata(X)));
+
         end
 
         function learn(layer, X, T)
         %LEARN - Incremental training of the wrapped TopoART-C network
         %   LEARN(layer, X, T) presents the rows of X (size
-        %   N-by-InputLen) together with the class IDs in T (size
-        %   N-by-1) to the wrapped TopoART-C network. X may be of any
-        %   numeric type; pass uint8 directly when IOType is 'uint8'.
+        %   sampleNum-by-InputLen) together with the class IDs in T
+        %   (size sampleNum-by-1) to the wrapped TopoART-C network. X
+        %   may be of any numeric type; pass uint8 directly when IOType
+        %   is 'uint8'.
 
             arguments
                 layer
@@ -211,6 +214,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                 error(['Number of columns in X (%d) does not match ' ...
                     'InputLen (%d).'], size(X, 2), layer.InputLen)
             end
+
             if size(X, 1) ~= length(T)
                 error(['Number of rows in X (%d) must match length ' ...
                     'of T (%d).'], size(X, 1), length(T))
@@ -221,6 +225,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             % class IDs to the integer type
             layer.Network.Learn(cast(X, layer.inputOutputType()), ...
                 cast(T, layer.IntType));
+
         end
 
     end
@@ -235,15 +240,8 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                 inputLen (1, 1) {mustBeInteger, mustBePositive}
                 moduleNum (1, 1) {mustBeInteger, mustBePositive}
                 rho_a (1, 1) double {mustBeInRange(rho_a, 0, 1)}
-                % netType is a string / char so the .NET assembly stays
-                % out of the default expression and can be loaded lazily
-                % via topoARTLayerBase.ensureLibLoaded (called from the
-                % constructor before delegating here).
                 netType {mustBeTextScalar} = 'Fast_TopoART_C'
                 options.Name (1, :) char = 'topoART_C'
-                % Optional TopoART hyperparameters. Default [] keeps the
-                % .NET library's default; supplying a value forwards it
-                % to the wrapped network before any learning happens.
                 options.Beta_sbm = []
                 options.Phi = []
                 options.Tau = []
@@ -270,6 +268,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                     error(['R is required when netType is ' ...
                         '''Hypersphere_TopoART_C''.'])
                 end
+
                 mustBeScalarOrEmpty(options.R)
                 mustBeNumeric(options.R)
                 mustBePositive(options.R)
@@ -359,6 +358,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             layer.Beta_sbm = double(layer.Network.Beta_sbm);
             layer.Phi = double(layer.Network.Phi);
             layer.Tau = double(layer.Network.Tau);
+
         end
 
     end

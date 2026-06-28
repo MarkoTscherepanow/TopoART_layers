@@ -119,7 +119,9 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             % value stays allowed. The cross-property Network read is
             % safe (and the MCSUP warning suppressed) because IOType is
             % only assigned before the network is constructed.
+
             networkExists = ~isempty(layer.Network); %#ok<MCSUP>
+
             if networkExists && ~strcmp(value, layer.IOType)
                 error(['Cannot change IOType once the wrapped ' ...
                     'network exists. Set IOType before calling ' ...
@@ -127,7 +129,9 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                     'construct the layer with the desired ' ...
                     'IOType.'])
             end
+
             layer.IOType = value;
+
         end
 
         function save(layer, path)
@@ -146,7 +150,9 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                 error(['Cannot save before the wrapped network is ' ...
                     'constructed.'])
             end
+
             layer.Network.Save(path);
+
         end
 
         function layer = load(layer, path)
@@ -198,6 +204,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             % whose wrapped network has a different input structure (e.g.
             % two key vectors) override refreshNetworkProperties.
             layer = layer.refreshNetworkProperties();
+
         end
 
         function resetAdaptationState(layer)
@@ -213,7 +220,9 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                 error(['Cannot reset the adaptation state before the ' ...
                     'wrapped network is constructed.'])
             end
+
             layer.Network.ResetAdaptationState();
+
         end
 
         function adapted = hasPermanentAdaptation(layer, epsilon)
@@ -231,6 +240,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             mask = LibTopoART.AdaptationState ...
                 .ANY_PERMANENT_ADAPTATION_MASK;
             adapted = layer.adaptationMatches(mask, epsilon);
+
         end
 
         function adapted = hasCandidateAdaptation(layer, epsilon)
@@ -247,6 +257,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             mask = LibTopoART.AdaptationState ...
                 .ANY_NONPERMANENT_ADAPTATION_MASK;
             adapted = layer.adaptationMatches(mask, epsilon);
+
         end
 
         function adapted = hasPermanentNodeAdaptation(layer)
@@ -256,6 +267,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
             mask = LibTopoART.AdaptationState.ADDED_PERMANENT_NODE;
             adapted = layer.adaptationMatches(mask);
+
         end
 
         function adapted = hasPermanentWeightAdaptation(layer, epsilon)
@@ -270,6 +282,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
             mask = LibTopoART.AdaptationState.ADAPTED_PERMANENT_WEIGHT;
             adapted = layer.adaptationMatches(mask, epsilon);
+
         end
 
         function adapted = hasPermanentEdgeAdaptation(layer)
@@ -279,6 +292,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
             mask = LibTopoART.AdaptationState.ADDED_PERMANENT_EDGE;
             adapted = layer.adaptationMatches(mask);
+
         end
 
         function adapted = hasCandidateNodeAdaptation(layer)
@@ -290,6 +304,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                 LibTopoART.AdaptationState.ADDED_NODE_CANDIDATE, ...
                 LibTopoART.AdaptationState.REMOVED_NODE_CANDIDATE);
             adapted = layer.adaptationMatches(mask);
+
         end
 
         function adapted = hasCandidateWeightAdaptation(layer, epsilon)
@@ -304,6 +319,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
             mask = LibTopoART.AdaptationState.ADAPTED_NONPERMANENT_WEIGHT;
             adapted = layer.adaptationMatches(mask, epsilon);
+
         end
 
         function adapted = hasCandidateEdgeAdaptation(layer)
@@ -315,6 +331,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                 LibTopoART.AdaptationState.ADDED_EDGE_CANDIDATE, ...
                 LibTopoART.AdaptationState.REMOVED_EDGE_CANDIDATE);
             adapted = layer.adaptationMatches(mask);
+
         end
 
     end
@@ -330,6 +347,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             if isempty(typeName)
                 typeName = layer.FPType;
             end
+
         end
 
         function layer = refreshNetworkProperties(layer)
@@ -348,6 +366,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             catch
                 layer.R = [];
             end
+
         end
 
     end
@@ -372,8 +391,10 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             else
                 state = layer.Network.GetAdaptationState(epsilon);
             end
+
             adapted = bitand(state, mask) ~= ...
                 LibTopoART.AdaptationState.NO_ADAPTATION;
+
         end
 
     end
@@ -420,6 +441,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
             NET.addAssembly(dllPath);
             loaded = true;
+
         end
 
         function name = networkClassName(intType, fpType, ioType)
@@ -459,6 +481,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             end
 
             name = ['TopoART_' intCode floatCode ioCode];
+
         end
 
     end
