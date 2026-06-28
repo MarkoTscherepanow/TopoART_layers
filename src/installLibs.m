@@ -38,7 +38,6 @@ function installLibs()
         end
 
         dotnetCmd = 'dotnet';
-        copyCmd = 'copy';
 
     else
 
@@ -51,12 +50,11 @@ function installLibs()
             dotnetCmd = 'dotnet';
         end
 
-        copyCmd = 'cp';
-
     end
 
     % load .NET runtime by accessing the namespace System
-    System.Console.WriteLine('Load .NET runtime')
+    disp('Load .NET runtime')
+    System.Environment.Version;
 
     if useNetFramework
         libTarget = 'net472';
@@ -84,46 +82,49 @@ function installLibs()
     % create the folders 'download' and 'lib'
     disp('Create folders')
 
-    execConsoleCmd('mkdir download')
-    execConsoleCmd('mkdir lib')
+    mkdir('download')
+    mkdir('lib')
 
     if useNetFramework 
         
         % download nuget.exe
         disp('Download nuget.exe (if required)')
         if ~exist(['download' filesep 'nuget.exe'], 'file')
-            execConsoleCmd(['curl https://dist.nuget.org/win-x86-commandline/latest/nuget.exe ' ...
-                '--output download\nuget.exe'])
+            websave(['download' filesep 'nuget.exe'], ...
+                ['https://dist.nuget.org/win-x86-commandline/' ...
+                'latest/nuget.exe'], weboptions('Timeout', 300));
         end
 
         % install FSharp.Core.dll
         disp(['Install FSharp.Core.dll ' fSharpCoreVersion])
         execConsoleCmd(['download\nuget.exe install FSharp.Core -version ' fSharpCoreVersion ...
             ' -DependencyVersion Ignore -OutputDirectory download'])
-        execConsoleCmd([copyCmd ' download\FSharp.Core.' fSharpCoreVersion ...
-            '\lib\netstandard2.0\FSharp.Core.dll lib'])
+        copyfile(['download\FSharp.Core.' fSharpCoreVersion ...
+            '\lib\netstandard2.0\FSharp.Core.dll'], 'lib')
 
         % install System.Numerics.Vectors.dll
         disp(['Install System.Numerics.Vectors.dll ' systemNumericsVectorsVersion])
         execConsoleCmd(['download\nuget install System.Numerics.Vectors -Version ' ...
             systemNumericsVectorsVersion ' -DependencyVersion Ignore ' ...
             '-OutputDirectory download'])
-        execConsoleCmd([copyCmd ' download\System.Numerics.Vectors.' systemNumericsVectorsVersion ...
-            '\lib\net462\System.Numerics.Vectors.dll lib'])
+        copyfile(['download\System.Numerics.Vectors.' ...
+            systemNumericsVectorsVersion ...
+            '\lib\net462\System.Numerics.Vectors.dll'], 'lib')
 
         % install LibTopoART.dll
         disp(['Install LibTopoART.dll ' libTopoARTVersion])
         execConsoleCmd(['download\nuget install LibTopoART -Version ' libTopoARTVersion ...
             ' -DependencyVersion Ignore -OutputDirectory download'])
-        execConsoleCmd([copyCmd ' download\LibTopoART.' libTopoARTVersion ...
-            '\lib\' libTarget '\LibTopoART.dll lib'])
+        copyfile(['download\LibTopoART.' libTopoARTVersion ...
+            '\lib\' libTarget '\LibTopoART.dll'], 'lib')
 
         % install LibTopoART.Compatibility.dll
         disp(['Install LibTopoART.Compatibility.dll ' libTopoARTCompatibilityVersion])
         execConsoleCmd(['download\nuget install LibTopoART.Compatibility -Version ' ...
             libTopoARTCompatibilityVersion ' -DependencyVersion Ignore -OutputDirectory download'])
-        execConsoleCmd([copyCmd ' download\LibTopoART.Compatibility.' ...
-            libTopoARTCompatibilityVersion '\lib\' libTarget '\LibTopoART.Compatibility.* lib'])
+        copyfile(['download\LibTopoART.Compatibility.' ...
+            libTopoARTCompatibilityVersion '\lib\' libTarget ...
+            '\LibTopoART.Compatibility.*'], 'lib')
 
     else
 
@@ -147,15 +148,16 @@ function installLibs()
 
          % install dependencies
          disp('Install dependencies')
-         execConsoleCmd([copyCmd ' download' filesep 'fsharp.core' filesep ...
-             fSharpCoreVersion filesep 'lib' filesep 'netstandard2.0' filesep ...
-             'FSharp.Core.dll lib'])
-         execConsoleCmd([copyCmd ' download' filesep 'libtopoart' filesep ...
+         copyfile(['download' filesep 'fsharp.core' filesep ...
+             fSharpCoreVersion filesep 'lib' filesep 'netstandard2.0' ...
+             filesep 'FSharp.Core.dll'], 'lib')
+         copyfile(['download' filesep 'libtopoart' filesep ...
              libTopoARTVersion filesep 'lib' filesep libTarget filesep ...
-             'LibTopoART.dll lib'])
-         execConsoleCmd([copyCmd ' download' filesep 'libtopoart.compatibility' ...
-             filesep libTopoARTCompatibilityVersion filesep 'lib' filesep ...
-             libTarget filesep 'LibTopoART.Compatibility.* lib'])
+             'LibTopoART.dll'], 'lib')
+         copyfile(['download' filesep 'libtopoart.compatibility' ...
+             filesep libTopoARTCompatibilityVersion filesep 'lib' ...
+             filesep libTarget filesep 'LibTopoART.Compatibility.*'], ...
+             'lib')
 
     end
 
