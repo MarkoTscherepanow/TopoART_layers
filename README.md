@@ -1,6 +1,6 @@
 # TopoART Layers
 
-Custom MATLAB deep learning layers that expose [TopoART](https://www.libtopoart.eu/) neural networks (an Adaptive Resonance Theory variant) as drop-in heads for `dlnetwork`. The layers wrap the .NET library [LibTopoART.Compatibility](https://github.com/MarkoTscherepanow/LibTopoART.Compatibility). TopoART is well-suited for tasks that require stable incremental learning after deployment or the ability to detect inputs lying outside the training distribution.
+Custom MATLAB deep learning layers that expose [TopoART](https://www.libtopoart.eu/) neural networks (an Adaptive Resonance Theory variant) as drop-in heads for `dlnetwork`. The layers wrap the .NET library [LibTopoART.Compatibility](https://github.com/MarkoTscherepanow/LibTopoART.Compatibility). TopoART is well-suited for tasks that require stable incremental learning after deployment or the ability to detect inputs lying outside the training distribution. Specific TopoART networks add further capabilities; for example, TopoART-AM provides bidirectional associative recall.
 
 ## Why TopoART as a layer?
 
@@ -58,6 +58,32 @@ The figures below show the results for the default settings (linear scaling). Co
 | :---: | :---: | :---: |
 | ![Classification results of the original softmax head](images/classifier/softmax_head.png) | ![Classification results of the TopoART-C head](images/classifier/TopoART_head.png) | ![Classification results of the TopoART-C head after incremental training](images/classifier/TopoART_head_incremental.png) |
 
+### Associative memory (TopoART-AM) examples
+
+Beyond classification, the layer [topoARTAssociativeMemoryLayer.m](src/topoARTAssociativeMemoryLayer.m) wraps a TopoART-AM network and acts as a bidirectional associative memory. It learns associations between pairs of key vectors. The association is symmetric: after training, either key can be presented to recall the other. The recall direction is selected by the layer's `Direction` property and can be switched between prediction calls without rebuilding the layer or the `dlnetwork`. Recall is a 1-to-n mapping: within a `dlnetwork`, `predict` returns the strongest association together with its activation (a confidence score), while the layer's `recall` method returns the associated keys of a stimulus in order of descending F3 activation. It may return the complete set, but it is usually stopped earlier — by a minimum activation (and optionally a maximum number of recalls) — so that only strongly associated keys are returned.
+
+Two samples associate two kinds of images, owners and objects, with an m-to-n mapping between them: each owner can be associated with several objects and an object can be shared by several owners. From the [src/samples/](src/samples/) folder, download the image dataset once:
+
+```matlab
+getDatasets
+```
+
+[associateImagesExample.m](src/samples/associateImagesExample.m) uses the raw images themselves as keys (with the uint8 interface type, the pixels are passed as integers in `[0, 255]`) and trains the layer directly through its `learn` method. Presenting a test owner recalls its associated objects, and presenting a test object recalls its owners. TopoART-AM does not just store the training images but learns internal representations called categories; the recalled images are created from these categories and usually combine information from several training images.
+
+```matlab
+associateImagesExample
+```
+
+[associateImagesWithAutoencodersExample.m](src/samples/associateImagesWithAutoencodersExample.m) demonstrates the backbone workflow for associative memories: one convolutional autoencoder is trained per key with `trainnet` (gradient descent), the frozen encoders serve as backbones, and the TopoART-AM head learns associations between the compact latent codes via `trainTopoARTAM` (incremental TopoART learning). Each recalled latent code is decoded back into an image by the matching decoder; no training images are needed at inference. Compressing each image into a few latent variables makes the associations far more robust to small input perturbations than the raw-pixel keys, at comparable recall quality on clean data.
+
+```matlab
+associateImagesWithAutoencodersExample
+```
+
+The figure below shows the recall direction owner -> objects for a held-out test owner. The frozen owner encoder turns the stimulus (left) into a latent key, the TopoART-AM head recalls the latent keys of the associated objects in order of descending activation (in parentheses), and the object decoder turns each recalled key back into an image. The recalled images stem from the learnt categories rather than from stored training images: each category encodes a subspace of TopoART's input space (here, the latent key space) that summarises several similar training keys, and a recall returns the centre of gravity of this subspace, so the decoded images average several training views; the remaining blur is the autoencoder's own reconstruction loss.
+
+![Objects recalled for a test owner by the TopoART-AM head on two autoencoder backbones](images/associative_memory/TopoART_head_owner_to_objects.png)
+
 ## Important constraints
 
 - **Input range.** TopoART requires every input to lie in `[0, 1]`. Decide the transform **before** training TopoART and apply the identical mapping at training and inference time. Two options:
@@ -66,7 +92,7 @@ The figures below show the results for the default settings (linear scaling). Co
 
     Hypersphere TopoART is less strict wrt. the scaling interval. Larger intervals need to be reflected by larger values of the radial extend parameter `R`.
 - **Frozen backbone.** When training on top of a backbone, the backbone must be frozen. TopoART builds stable prototypes called categories in the feature space; if that space shifts, the categories become invalid.
-- **No `trainnet` for TopoART layers.** Train them via the layer's `learn` method (standalone) or `trainTopoART` (with a backbone).
+- **No `trainnet` for TopoART layers.** Train them via the layer's `learn` method (standalone), `trainTopoART` (with a backbone), or `trainTopoARTAM` (associative memory with two backbones).
 
 ## Related information and background
 
