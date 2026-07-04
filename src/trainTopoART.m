@@ -6,7 +6,11 @@
 %     - The backbone is run in inference mode; its parameters are NOT
 %       updated. (Frozen backbone is a hard precondition because TopoART
 %       builds stable prototypes in the feature space; if that space
-%       shifts, the prototypes become invalid.)
+%       shifts, the prototypes become invalid.) Because it is frozen,
+%       every sample is encoded once before training and the cached
+%       features are reused across epochs rather than re-encoded. The
+%       backbone may run on a GPU; the cached features are gathered to
+%       the CPU, where the TopoART layer computes.
 %     - The TopoART layer's wrapped .NET network is mutated in place by
 %       calling its learn method per minibatch. There is no loss function
 %       and no gradient computation.
@@ -67,7 +71,8 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
         options.MaxEpochs       (1, 1) {mustBeInteger, mustBePositive} = 1
         options.MiniBatchSize   (1, 1) {mustBeInteger, mustBePositive} = 128
         options.Shuffle         (1, :) char ...
-            {mustBeMember(options.Shuffle, {'every-epoch', 'once', 'never'})} = 'every-epoch'
+            {mustBeMember(options.Shuffle, ...
+            {'every-epoch', 'once', 'never'})} = 'every-epoch'
         options.MiniBatchFormat (1, :) cell = {'CB', 'CB'}
         options.MiniBatchFcn    (1, 1) function_handle = @defaultRowsToCB
         options.Verbose         (1, 1) logical = true
@@ -75,9 +80,11 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
 
     % The backbone must have a single output that we can wire into the head.
     if numel(backboneNet.OutputNames) ~= 1
-        error(['backboneNet must have a single output. Found %d outputs. ' ...
-            'Wire the desired feature tensor through a single output layer ' ...
-            'before calling trainTopoART.'], numel(backboneNet.OutputNames))
+        error('trainTopoART:multipleOutputs', ...
+            ['backboneNet must have a single output. Found %d ' ...
+            'outputs. Wire the desired feature tensor through a ' ...
+            'single output layer before calling trainTopoART.'], ...
+            numel(backboneNet.OutputNames))
     end
 
     % removeLayers drops the Initialized flag even when all remaining
@@ -92,64 +99,67 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
         MiniBatchFcn    = options.MiniBatchFcn, ...
         MiniBatchFormat = options.MiniBatchFormat);
 
-    if strcmp(options.Shuffle, 'once')
-        shuffle(mbq)
-    end
-
     if options.Verbose
         fprintf(['trainTopoART: %d epoch(s), MiniBatchSize = %d, ' ...
             'Shuffle = %s\n'], options.MaxEpochs, options.MiniBatchSize, ...
             options.Shuffle);
     end
 
+    % Encode every sample once. The frozen backbone produces the same
+    % features every epoch, so it is run here (in MiniBatchSize chunks
+    % to bound memory) and the cached features are reused across epochs.
+    % predict builds no autograd tape, so the backbone is not updated;
+    % gather moves GPU-resident features to the CPU, where the wrapped
+    % network computes.
+    reset(mbq)
+    featureChunks = {};
+    targetChunks = {};
+    while hasdata(mbq)
+        [X, T] = next(mbq);
+        featureChunks{end + 1} = double(gather(extractdata( ...
+            predict(backboneNet, X)))); %#ok<AGROW>
+        targetChunks{end + 1} = double(gather(extractdata(T))); %#ok<AGROW>
+    end
+    features = cat(2, featureChunks{:});
+    targets = cat(2, targetChunks{:});
+
+    if size(features, 1) ~= topoArtLayer.InputLen
+        error('trainTopoART:sizeMismatch', ...
+            ['Backbone output channel count (%d) does not match ' ...
+            'topoArtLayer.InputLen (%d).'], size(features, 1), ...
+            topoArtLayer.InputLen)
+    end
+
+    % Present the cached features to the head. Each minibatch is one
+    % learn call that mutates the wrapped .NET network in place.
+    % Transposing the sliced columns yields rows-are-samples: vector
+    % targets become a column of class IDs and matrix targets a
+    % sampleNum-by-targetLen matrix.
+    sampleNum = size(features, 2);
+    if strcmp(options.Shuffle, 'once')
+        order = randperm(sampleNum);
+    else
+        order = 1:sampleNum;
+    end
+
     iter = 0;
     for epoch = 1:options.MaxEpochs
 
         if strcmp(options.Shuffle, 'every-epoch')
-            shuffle(mbq)
-        else
-            reset(mbq)
+            order = randperm(sampleNum);
         end
 
-        epochSamples = 0;
-        while hasdata(mbq)
+        for first = 1:options.MiniBatchSize:sampleNum
             iter = iter + 1;
-            [X, T] = next(mbq);
-
-            % forward pass through the frozen backbone in inference mode;
-            % no dlfeval/dlgradient, so parameters are not updated and the
-            % autograd tape is not built
-            features = predict(backboneNet, X);
-
-            % reshape features to sampleNum-by-InputLen rows for the
-            % .NET Learn API
-            featuresRaw = double(extractdata(features));
-            if size(featuresRaw, 1) ~= topoArtLayer.InputLen
-                error(['Backbone output channel count (%d) does not match ' ...
-                    'topoArtLayer.InputLen (%d).'], ...
-                    size(featuresRaw, 1), topoArtLayer.InputLen)
-            end
-            featuresMat = featuresRaw';
-
-            % targets: 'CB' -> rows-are-samples; vector targets become a
-            % column vector (TopoART-C class IDs), matrix targets become
-            % a sampleNum-by-targetLen matrix
-            targetsRaw = double(extractdata(T));
-            if isrow(targetsRaw) || iscolumn(targetsRaw)
-                targetsArg = targetsRaw(:);
-            else
-                targetsArg = targetsRaw';
-            end
-
-            % polymorphic dispatch: each subclass validates types/shapes
-            topoArtLayer.learn(featuresMat, targetsArg);
-
-            epochSamples = epochSamples + size(featuresMat, 1);
+            last = min(first + options.MiniBatchSize - 1, sampleNum);
+            idx = order(first:last);
+            topoArtLayer.learn(features(:, idx)', targets(:, idx)');
         end
 
         if options.Verbose
-            fprintf('  epoch %d/%d done, %d samples, total iterations: %d\n', ...
-                epoch, options.MaxEpochs, epochSamples, iter);
+            fprintf(['  epoch %d/%d done, %d samples, total ' ...
+                'iterations: %d\n'], epoch, options.MaxEpochs, ...
+                sampleNum, iter);
         end
     end
 
@@ -159,7 +169,8 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
     % only) TopoART layer still carry their values, so re-running
     % initialize just flips the flag.
     lgraph = addLayers(backboneNet, topoArtLayer);
-    net = connectLayers(lgraph, backboneNet.OutputNames{1}, topoArtLayer.Name);
+    net = connectLayers(lgraph, backboneNet.OutputNames{1}, ...
+        topoArtLayer.Name);
     if ~net.Initialized
         net = initialize(net);
     end

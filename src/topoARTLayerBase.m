@@ -23,6 +23,12 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 %     Rho_a      - Vigilance parameter of the first TopoART module
 %     NetType    - Network type from LibTopoART.Compatibility.Network
 %     IOType     - Interface type used only for input/output
+%     Beta_sbm   - Learning rate of the second-best-matching neuron
+%     Phi        - Threshold for promoting candidate neurons to
+%                  permanent ones
+%     Tau        - Number of presentations between candidate-neuron purges
+%     R          - Radial extend parameter of Hypersphere TopoART
+%                  (empty for TopoART, where it does not exist)
 %
 %   Transient properties
 %     Network    - Handle to the wrapped LibTopoART.Compatibility TopoART
@@ -80,7 +86,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
         % then passed as integers in [0, 255].
         IOType (1, :) char = ''
 
-        % Beta_sbm - Learning rate of the second-best matching neuron
+        % Beta_sbm - Learning rate of the second-best-matching neuron
         Beta_sbm
 
         % Phi - Threshold for promoting candidate neurons to permanent ones
@@ -117,13 +123,21 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             % IOType selects the wrapped network class, so it cannot be
             % changed once that network exists; assigning the unchanged
             % value stays allowed. The cross-property Network read is
-            % safe (and the MCSUP warning suppressed) because IOType is
-            % only assigned before the network is constructed.
+            % safe because IOType is only assigned before the network
+            % is constructed.
+
+            % Validate against the known interface types right away
+            % (networkClassName rejects unknown values); the resulting
+            % class name is not needed here.
+            topoARTLayerBase.networkClassName( ...
+                topoARTLayerBase.IntType, topoARTLayerBase.FPType, ...
+                value);
 
             networkExists = ~isempty(layer.Network); %#ok<MCSUP>
 
             if networkExists && ~strcmp(value, layer.IOType)
-                error(['Cannot change IOType once the wrapped ' ...
+                error('topoARTLayerBase:ioTypeLocked', ...
+                    ['Cannot change IOType once the wrapped ' ...
                     'network exists. Set IOType before calling ' ...
                     'load on a default-constructed layer, or ' ...
                     'construct the layer with the desired ' ...
@@ -147,7 +161,8 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             end
 
             if isempty(layer.Network)
-                error(['Cannot save before the wrapped network is ' ...
+                error('topoARTLayerBase:uninitialised', ...
+                    ['Cannot save before the wrapped network is ' ...
                     'constructed.'])
             end
 
@@ -183,7 +198,8 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
             topoARTLayerBase.ensureLibLoaded()
             if exist(path, 'file') ~= 2
-                error('Network file not found: %s', path)
+                error('topoARTLayerBase:fileNotFound', ...
+                    'Network file not found: %s', path)
             end
 
             % The interface types select which network class reads the
@@ -217,7 +233,8 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
         %   once the permanent network has stabilised.
 
             if isempty(layer.Network)
-                error(['Cannot reset the adaptation state before the ' ...
+                error('topoARTLayerBase:uninitialised', ...
+                    ['Cannot reset the adaptation state before the ' ...
                     'wrapped network is constructed.'])
             end
 
@@ -382,7 +399,8 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
         %   applies. The threshold does not affect node and edge flags.
 
             if isempty(layer.Network)
-                error(['Cannot query the adaptation state before the ' ...
+                error('topoARTLayerBase:uninitialised', ...
+                    ['Cannot query the adaptation state before the ' ...
                     'wrapped network is constructed.'])
             end
 
@@ -426,17 +444,23 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
             end
 
             if ~(ispc || isunix)
-                error('OS is not supported by LibTopoART.Compatibility.')
+                error('topoARTLayerBase:osUnsupported', ...
+                    'OS is not supported by LibTopoART.Compatibility.')
             end
             if ~NET.isNETSupported
-                error('.NET is not supported on this MATLAB installation.')
+                error('topoARTLayerBase:netUnsupported', ...
+                    ['.NET is not supported on this MATLAB ' ...
+                    'installation.'])
             end
 
             srcDir  = fileparts(mfilename('fullpath'));
-            dllPath = fullfile(srcDir, 'lib', 'LibTopoART.Compatibility.dll');
+            dllPath = fullfile(srcDir, 'lib', ...
+                'LibTopoART.Compatibility.dll');
             if exist(dllPath, 'file') ~= 2
-                error(['LibTopoART.Compatibility.dll was not found at %s. ' ...
-                    'Run installLibs to install the .NET library.'], dllPath)
+                error('topoARTLayerBase:dllNotFound', ...
+                    ['LibTopoART.Compatibility.dll was not found ' ...
+                    'at %s. Run installLibs to install the .NET ' ...
+                    'library.'], dllPath)
             end
 
             NET.addAssembly(dllPath);
@@ -456,7 +480,8 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                 case 'int64'
                     intCode = 'i64';
                 otherwise
-                    error(['Unsupported IntType ''%s''. ' ...
+                    error('topoARTLayerBase:unsupportedInterfaceType', ...
+                        ['Unsupported IntType ''%s''. ' ...
                         'Known: ''int64''.'], intType)
             end
 
@@ -464,7 +489,8 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                 case 'double'
                     floatCode = 'd';
                 otherwise
-                    error(['Unsupported FPType ''%s''. ' ...
+                    error('topoARTLayerBase:unsupportedInterfaceType', ...
+                        ['Unsupported FPType ''%s''. ' ...
                         'Known: ''double''.'], fpType)
             end
 
@@ -475,7 +501,9 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                     case 'uint8'
                         ioCode = 'u8';
                     otherwise
-                        error(['Unsupported IOType ''%s''. ' ...
+                        error(['topoARTLayerBase:' ...
+                            'unsupportedInterfaceType'], ...
+                            ['Unsupported IOType ''%s''. ' ...
                             'Known: '''' (none), ''uint8''.'], ioType)
                 end
             end

@@ -39,9 +39,14 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 %   .NET 6.0 or higher. Furthermore, installLibs must be run before
 %   it can be used.
 %
+%   The wrapped network computes on the CPU. Inputs residing on a GPU
+%   are gathered automatically before they reach the .NET library, and
+%   predict returns its outputs in the input's environment.
+%
 %   Syntax
 %     layer = TOPOARTCLASSIFICATIONLAYER(inputLen, moduleNum, rho_a)
-%     layer = TOPOARTCLASSIFICATIONLAYER(inputLen, moduleNum, rho_a, netType)
+%     layer = TOPOARTCLASSIFICATIONLAYER(inputLen, moduleNum, rho_a, ...
+%               netType)
 %     layer = TOPOARTCLASSIFICATIONLAYER(__, Name=name)
 %     layer = TOPOARTCLASSIFICATIONLAYER()
 %       Default constructor: returns an uninitialised layer with no
@@ -50,8 +55,8 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 %
 %   Input Arguments
 %     inputLen  - Length of the input vector (channels of the dlarray)
-%                 For TopoART, every input element
-%                 must lie in [0, 1]; see the INPUT RANGE note above.
+%                 For TopoART, every input element must lie in [0, 1];
+%                 see the INPUT RANGE note above.
 %     moduleNum - Number of TopoART modules (typical: 2)
 %     rho_a     - Vigilance parameter of the first TopoART module
 %                 (in [0, 1]; higher values yield finer categories).
@@ -63,7 +68,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 %                 interface type (double); set it to 'uint8' for uint8
 %                 input/output. (default: '')
 %     Name      - Layer name (default: 'topoART_C')
-%     Beta_sbm  - Learning rate of the second-best matching neuron
+%     Beta_sbm  - Learning rate of the second-best-matching neuron
 %                 Beta_sbm controls partial adaptation of the
 %                 second-best match. (range: [0, 1]; default: leave the
 %                 .NET library's default unchanged)
@@ -74,7 +79,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 %                 (positive integer; default: leave the .NET library's
 %                 default unchanged)
 %     R         - Radial extend parameter of Hypersphere TopoART
-%                 (positive scalar; Required when netType is
+%                 (positive scalar; required when netType is
 %                 'Hypersphere_TopoART_C'; rejected for TopoART; set at
 %                 construction and stored as a layer property; cannot be
 %                 changed afterwards)
@@ -147,7 +152,8 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             mustBeInteger(value)
             mustBeNonnegative(value)
             if isempty(layer.Network)
-                error(['Cannot set Nu before the wrapped network is ' ...
+                error('topoARTClassificationLayer:uninitialised', ...
+                    ['Cannot set Nu before the wrapped network is ' ...
                     'constructed.'])
             end
             layer.Network.Nu = cast(value, layer.IntType);
@@ -164,16 +170,28 @@ classdef topoARTClassificationLayer < topoARTLayerBase
         %   input format ('CB') to the output automatically.
 
             if isempty(layer.Network)
-                error(['Layer is uninitialised. Construct with ' ...
+                error('topoARTClassificationLayer:uninitialised', ...
+                    ['Layer is uninitialised. Construct with ' ...
                     'positional arguments or call ' ...
                     'LAYER = LAYER.LOAD(PATH) before predict.'])
             end
 
             % cast to the network's input/output interface type (e.g.
             % uint8); this also selects the matching .NET Classify
-            % overload
-            inputs = cast(extractdata(X), layer.inputOutputType());
+            % overload. gather moves GPU-resident inputs to the CPU,
+            % where the wrapped network computes; the 'like' cast below
+            % returns the outputs in the input's environment.
+            inputData = extractdata(X);
+            inputs = cast(gather(inputData), layer.inputOutputType());
             sampleNum = size(inputs, 2);
+
+            if size(inputs, 1) ~= layer.InputLen
+                error('topoARTClassificationLayer:sizeMismatch', ...
+                    ['Number of input channels (%d) does not ' ...
+                    'match InputLen (%d).'], size(inputs, 1), ...
+                    layer.InputLen)
+            end
+
             mask = false(1, layer.InputLen);
 
             classIDs    = zeros(1, sampleNum);
@@ -186,7 +204,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             end
 
             prediction = dlarray(cast([classIDs; confidences], ...
-                'like', extractdata(X)));
+                'like', inputData));
 
         end
 
@@ -205,26 +223,30 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             end
 
             if isempty(layer.Network)
-                error(['Layer is uninitialised. Construct with ' ...
+                error('topoARTClassificationLayer:uninitialised', ...
+                    ['Layer is uninitialised. Construct with ' ...
                     'positional arguments or call ' ...
                     'LAYER = LAYER.LOAD(PATH) before learn.'])
             end
 
             if size(X, 2) ~= layer.InputLen
-                error(['Number of columns in X (%d) does not match ' ...
+                error('topoARTClassificationLayer:sizeMismatch', ...
+                    ['Number of columns in X (%d) does not match ' ...
                     'InputLen (%d).'], size(X, 2), layer.InputLen)
             end
 
             if size(X, 1) ~= length(T)
-                error(['Number of rows in X (%d) must match length ' ...
+                error('topoARTClassificationLayer:sizeMismatch', ...
+                    ['Number of rows in X (%d) must match length ' ...
                     'of T (%d).'], size(X, 1), length(T))
             end
 
             % cast to the interface types so the correct .NET Learn
             % overload is selected: X to the input/output type and the
-            % class IDs to the integer type
-            layer.Network.Learn(cast(X, layer.inputOutputType()), ...
-                cast(T, layer.IntType));
+            % class IDs to the integer type; gather moves GPU-resident
+            % inputs to the CPU, where the wrapped network computes
+            layer.Network.Learn(cast(gather(X), ...
+                layer.inputOutputType()), cast(T, layer.IntType));
 
         end
 
@@ -265,7 +287,8 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             if isHypersphere
 
                 if isempty(options.R)
-                    error(['R is required when netType is ' ...
+                    error('topoARTClassificationLayer:invalidR', ...
+                        ['R is required when netType is ' ...
                         '''Hypersphere_TopoART_C''.'])
                 end
 
@@ -274,7 +297,8 @@ classdef topoARTClassificationLayer < topoARTLayerBase
                 mustBePositive(options.R)
 
             elseif ~isempty(options.R)
-                error(['R is only meaningful when netType is ' ...
+                error('topoARTClassificationLayer:invalidR', ...
+                    ['R is only meaningful when netType is ' ...
                     '''Hypersphere_TopoART_C''.'])
             end
 

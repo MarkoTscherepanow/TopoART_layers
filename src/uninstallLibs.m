@@ -1,6 +1,6 @@
 %UNINSTALLLIBS - Remove the downloaded .NET libraries
-%   This function removes the downloaded and installed files from the
-%   current folder. It must be run directly after starting MATLAB before
+%   This function removes the files downloaded and installed by
+%   installLibs. It must be run directly after starting MATLAB before
 %   the first usage of LibTopoART.Compatibility.dll.
 function uninstallLibs()
 
@@ -12,11 +12,12 @@ function uninstallLibs()
         error('OS is not supported')
     end
 
-    % remove the folders 'download' and 'lib'
+    % remove the folders 'download' and 'lib' next to this file
     disp('Cleanup')
 
-    removeFolder('download')
-    removeFolder('lib')
+    basePath = fileparts(mfilename('fullpath'));
+    removeFolder(fullfile(basePath, 'download'))
+    removeFolder(fullfile(basePath, 'lib'))
 
 end
 

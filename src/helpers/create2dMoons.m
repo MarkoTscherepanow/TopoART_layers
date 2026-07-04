@@ -4,9 +4,10 @@
 %   lie approximately within the intervals [-1.3, 2.3] in x-direction and
 %   [-0.8, 1.3] in y-direction (depending on noise).
 %
-%   Two-moons are markedly easier for shallow MLPs than the intertwined
-%   spirals from create2dSpirals, which makes them a good fit for
-%   demonstrations where the backbone training itself is not the focus.
+%   The two-moons dataset is markedly easier for shallow MLPs than the
+%   intertwined spirals from create2dSpirals, which makes it a good fit
+%   for demonstrations where the backbone training itself is not the
+%   focus.
 %
 %   Syntax
 %     moons = CREATE2DMOONS

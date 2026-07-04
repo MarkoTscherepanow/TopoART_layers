@@ -24,7 +24,7 @@
 %     dataset - Dataset to be used
 %       Allowed values are 'spirals' (two intertwined spirals via
 %       create2dSpirals) and 'moons' (two interleaved half-moons via
-%        create2dMoons). (default: 'spirals')
+%       create2dMoons). (default: 'spirals')
 %     confThresh - Confidence threshold
 %       The classification confidence lies in the range [0, 1] where a
 %       confidence of 1 signifies that an input is completely known by the
@@ -72,6 +72,10 @@ function classify2dExample(dataset, confThresh)
     % constructor, after the .NET assembly has been loaded on demand.)
     netType = 'Fast_TopoART_C';
 
+    % disable/enable export of the result figure as a PNG image into the
+    % images folder in the repository root
+    exportImages = false;
+
     % Set path so that the layer and the helpers can be located when the
     % example is run from the samples folder. The wrapped .NET library is
     % loaded on demand by the constructor of topoARTClassificationLayer.
@@ -80,6 +84,19 @@ function classify2dExample(dataset, confThresh)
     srcPath  = fileparts(basePath);
     oldPath  = addpath(srcPath, fullfile(srcPath, 'helpers'));
     pathCleanup = onCleanup(@() path(oldPath)); %#ok<NASGU>
+
+    % file for the PNG export into the images/classifier folder; an
+    % empty file name disables the export
+    if exportImages
+        imagesPath = fullfile(fileparts(srcPath), 'images', ...
+            'classifier'); %#ok<UNRCH>
+        if ~isfolder(imagesPath)
+            mkdir(imagesPath)
+        end
+        exportFile = fullfile(imagesPath, ['TopoART_' dataset '.png']);
+    else
+        exportFile = ''; %#ok<UNRCH>
+    end
 
     % Generate the chosen dataset and shuffle it randomly. The min/max
     % bounds are dataset-specific but decided in advance, so the rescaling
@@ -95,7 +112,7 @@ function classify2dExample(dataset, confThresh)
             dataMax =  2.5;
     end
 
-    samples = samples(randperm(length(samples)), :);
+    samples = samples(randperm(size(samples, 1)), :);
     samples(:, 1:2) = (samples(:, 1:2) - dataMin) / (dataMax - dataMin);
 
     trainX = samples(:, 1:2);
@@ -141,7 +158,14 @@ function classify2dExample(dataset, confThresh)
 
     disp('Compute results figure')
 
-    figure(Name = 'Classification Results (topoARTClassificationLayer)')
+    figName = 'Classification Results (topoARTClassificationLayer)';
+    if isempty(exportFile)
+        figure(Name = figName)
+    else
+        % fix the figure size so that exported images are identical
+        % across screens
+        figure(Name = figName, Position = [100 100 700 560])
+    end
     hold on
     grid
     axis([0 1 0 1])
@@ -149,21 +173,19 @@ function classify2dExample(dataset, confThresh)
     title('classified grid points')
 
     colors = [0 0 1; 1 0 0];
-    for i = 1:length(gridData)
-        if classIDs(i) > 0
-            plot(gridData(i, 1), gridData(i, 2), 's', ...
-                'MarkerFaceColor', colors(classIDs(i), :), ...
-                'MarkerEdgeColor', [1 1 1])
-        end
+    for classID = 1:size(colors, 1)
+        gridIdx = classIDs == classID;
+        plot(gridData(gridIdx, 1), gridData(gridIdx, 2), 's', ...
+            'MarkerFaceColor', colors(classID, :), ...
+            'MarkerEdgeColor', [1 1 1])
     end
 
-    % overlay the training samples
-    for i = 1:length(trainX)
-        if trainT(i) == 1
-            plot(trainX(i, 1), trainX(i, 2), '*k')
-        else
-            plot(trainX(i, 1), trainX(i, 2), 'ok')
-        end
+    % overlay the training samples (class 1: stars, class 2: circles)
+    plot(trainX(trainT == 1, 1), trainX(trainT == 1, 2), '*k')
+    plot(trainX(trainT == 2, 1), trainX(trainT == 2, 2), 'ok')
+
+    if ~isempty(exportFile)
+        exportgraphics(gcf, exportFile, Resolution = 100)
     end
 
 end

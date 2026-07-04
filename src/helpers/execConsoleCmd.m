@@ -21,9 +21,9 @@ function execConsoleCmd(cmd, onlyWarn)
     [status, result] = system(cmd);
     if status ~= 0
         if onlyWarn
-            warning(result)
+            warning('%s', result)
         else
-            error(result)
+            error('%s', result)
         end
     end
 
