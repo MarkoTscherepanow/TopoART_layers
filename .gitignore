@@ -1,3 +1,12 @@
 src/download
 src/lib
+data/
+
 *.asv
+*.mat
+
+images/classifier/TopoART_moons.png
+images/classifier/TopoART_spirals.png
+images/associative_memory/TopoART_object_to_owners.png
+images/associative_memory/TopoART_owner_to_objects.png
+images/associative_memory/TopoART_head_object_to_owners.png
