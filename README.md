@@ -47,12 +47,12 @@ The results demonstrate that (Hypersphere) TopoART-C can easily classify data wi
 
 ```matlab
 classifyWithBackbone2dExample          % default: linear scaling
-classifyWithBackbone2dExample(false)   % tanh-based normalization
+classifyWithBackbone2dExample(false)   % tanh-based normalisation
 ```
 
-Here, TopoART's capability to reject unknown data is limited by the features it obtains as input. Therefore, two different methods are demonstrated: linear scaling and tanh-based normalization. While linear scaling preserves this capability, tanh-based normalization may impair it considerably due to its non-linear nature. On the other hand, linear scaling requires additional processing steps (the slope/offset are fitted once on the trained backbone's outputs, then frozen and clipped to `[0, 1]`) which can be omitted for tanh-based normalization. The choice depends on whether rejection of unknown input or implementation simplicity matters more for the application at hand.
+Here, TopoART's capability to reject unknown data is limited by the features it obtains as input. Therefore, two different methods are demonstrated: linear scaling and tanh-based normalisation. While linear scaling preserves this capability, tanh-based normalisation may impair it considerably due to its non-linear nature. On the other hand, linear scaling requires additional processing steps (the slope/offset are fitted once on the trained backbone's outputs, then frozen and clipped to `[0, 1]`) which can be omitted for tanh-based normalisation. The choice depends on whether rejection of unknown input or implementation simplicity matters more for the application at hand.
 
-The figures below show the results for the default settings (linear scaling). Colored squares are classified grid points; grid points rejected by the confidence threshold are left blank. Black markers denote the training samples. The original softmax head (left) extrapolates and assigns almost the entire grid to one of the two classes with high confidence. The TopoART-C head (center) only labels grid points that resemble the training data and rejects the rest. After incremental training with a third class shown in green (right), the TopoART-C head recognizes the new class without forgetting the two original ones.
+The figures below show the results for the default settings (linear scaling). Coloured squares are classified grid points; grid points rejected by the confidence threshold are left blank. Black markers denote the training samples. The original softmax head (left) extrapolates and assigns almost the entire grid to one of the two classes with high confidence. The TopoART-C head (centre) only labels grid points that resemble the training data and rejects the rest. After incremental training with a third class shown in green (right), the TopoART-C head recognises the new class without forgetting the two original ones.
 
 | Original softmax head | TopoART-C head | After incremental training |
 | :---: | :---: | :---: |

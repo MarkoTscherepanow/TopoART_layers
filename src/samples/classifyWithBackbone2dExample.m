@@ -34,9 +34,9 @@
 %     CLASSIFYWITHBACKBONE2DEXAMPLE(useScaling, threshTA, threshSM)
 %
 %   Input Arguments
-%     useScaling - Select input normalization method (scaling or tanh-based)
+%     useScaling - Select input normalisation method (scaling or tanh-based)
 %       TopoART inputs must lie in [0, 1]. This switch allows choosing
-%       between linear scaling (if true) and tanh-based normalization.
+%       between linear scaling (if true) and tanh-based normalisation.
 %       (default: true)
 %     threshTA - Confidence threshold for the TopoART head
 %       This confidence measures similarity to known data, so a high
@@ -95,7 +95,7 @@ function classifyWithBackbone2dExample(useScaling, threshTA, threshSM)
     % radial extend R required by Hypersphere TopoART-C, set according to
     % R = sqrt(inputDimension * (dataMax - dataMin)^2) / 2
     % where (dataMax - dataMin) is the per-dimension range of the actual
-    % TopoART input. Both scaling and tanh-based normalization keep the
+    % TopoART input. Both scaling and tanh-based normalisation keep the
     % input within [0, 1], so dataMax - dataMin = 1 is used here.
     R = sqrt(featureLen) / 2; %#ok<NASGU>
 
@@ -108,7 +108,7 @@ function classifyWithBackbone2dExample(useScaling, threshTA, threshSM)
     showSoftmaxPrediction = true;
 
     % disable/enable export of the result figures as PNG images into the
-    % images folder in the repository root (used by the README)
+    % images folder in the repository root
     exportImages = false;
 
     % Set path so that the layer and helpers can be located when the
@@ -134,13 +134,13 @@ function classifyWithBackbone2dExample(useScaling, threshTA, threshSM)
     end
 
     % seed the random number generator so the moon noise, the sample
-    % shuffle, and the backbone weight initialization are reproducible
-    % (drop or change the seed to explore initialization variability)
+    % shuffle, and the backbone weight initialisation are reproducible
+    % (drop or change the seed to explore initialisation variability)
     rng(0)
 
     % generate and prepare the training data
     samples = create2dMoons;
-    samples = samples(randperm(length(samples)), :);
+    samples = samples(randperm(size(samples, 1)), :);
 
     trainX = samples(:, 1:2);
     trainT = samples(:, 3); % class IDs in {1, 2}
@@ -190,7 +190,9 @@ function classifyWithBackbone2dExample(useScaling, threshTA, threshSM)
             dlarray(trainX', 'CB'))));
         featureMin = min(rawFeatures, [], 2);
         featureMax = max(rawFeatures, [], 2);
-        slope = 0.5 ./ (featureMax - featureMin);
+        span = featureMax - featureMin;
+        span(span < 1e-6) = 1;
+        slope = 0.5 ./ span;
         offset = 0.25 - slope .* featureMin;
         scaleToInner = @(x) min(max(slope .* x + offset, 0), 1);
         backbone = replaceLayer(backbone, 'scale_features', ...
@@ -278,7 +280,7 @@ end
 function plotResults(figName, gridData, classIDs, samples, exportFile)
 %PLOTRESULTS - Plot classified grid points and training samples
 %   Opens a figure named figName and draws the grid points as squares
-%   colored according to their entries in classIDs; points with a class ID
+%   coloured according to their entries in classIDs; points with a class ID
 %   of 0 (rejected by the confidence threshold) are omitted. The training
 %   samples are overlaid using class-specific black markers. If exportFile
 %   is given and non-empty, the figure size is fixed and the finished
@@ -307,17 +309,18 @@ function plotResults(figName, gridData, classIDs, samples, exportFile)
     title('classified grid points')
 
     colors = [0 0 1; 1 0 0; 0 0.8 0];
-    for i = 1:length(gridData)
-        if classIDs(i) > 0
-            plot(gridData(i, 1), gridData(i, 2), 's', ...
-                'MarkerFaceColor', colors(classIDs(i), :), ...
-                'MarkerEdgeColor', [1 1 1])
-        end
+    for classID = 1:size(colors, 1)
+        gridIdx = classIDs == classID;
+        plot(gridData(gridIdx, 1), gridData(gridIdx, 2), 's', ...
+            'MarkerFaceColor', colors(classID, :), ...
+            'MarkerEdgeColor', [1 1 1])
     end
 
     markers = {'*k', 'ok', 'pk'};
-    for i = 1:length(samples)
-        plot(samples(i, 1), samples(i, 2), markers{samples(i, 3)})
+    for classID = 1:numel(markers)
+        sampleIdx = samples(:, 3) == classID;
+        plot(samples(sampleIdx, 1), samples(sampleIdx, 2), ...
+            markers{classID})
     end
 
     if ~isempty(exportFile)
