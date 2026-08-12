@@ -1,6 +1,6 @@
 %CLASSIFYWITHBACKBONE2DEXAMPLE - Train TopoART on top of a frozen backbone
 %   ATTENTION: This function requires .NET Framework 4.7.2 or higher, or
-%   .NET 6.0 or higher. Furthermore, installLibs (in the parent src folder)
+%   .NET 6.0 or higher. Furthermore, installLibs (in the parent folder)
 %   must be run before CLASSIFYWITHBACKBONE2DEXAMPLE can be used.
 %
 %   This example demonstrates the typical end-to-end workflow with a
@@ -172,6 +172,7 @@ function classifyWithBackbone2dExample(useScaling, threshTA, threshSM)
         InitialLearnRate = 5e-3, ...
         L2Regularization = 1e-4, ...
         Verbose          = false, ...
+        OutputFcn        = @trainnetDots, ...
         Plots            = 'none');
 
     % train a small backbone with trainnet

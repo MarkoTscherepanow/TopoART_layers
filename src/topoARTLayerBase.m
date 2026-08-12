@@ -367,6 +367,38 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
         end
 
+        function learnVectorPairs(layer, vecs1, vecs2)
+        %LEARNVECTORPAIRS - Online training on paired sample rows
+        %   LEARNVECTORPAIRS(layer, vecs1, vecs2) presents the row pairs
+        %   of vecs1 and vecs2 (sizes sampleNum-by-len1 and
+        %   sampleNum-by-len2) to the two-vector Learn overload of the
+        %   wrapped TopoART-AM or TopoART-R network. Both matrices are
+        %   gathered from the GPU and cast to the input/output interface
+        %   type, which selects the matching .NET overload. Callers
+        %   validate the sizes and that the wrapped network exists.
+
+            ioType = layer.inputOutputType();
+            vecs1 = gather(vecs1);
+            vecs2 = gather(vecs2);
+
+            % When a vector has length 1, its per-sample matrix is a
+            % sampleNum-by-1 column, which MATLAB marshals as a 1-D
+            % vector and binds to the single-sample Learn overload (one
+            % full-length vector). Present such samples one row at a
+            % time so each vector keeps its length; the batch overload
+            % still handles the multi-feature case.
+            if size(vecs1, 2) == 1 || size(vecs2, 2) == 1
+                for r = 1:size(vecs1, 1)
+                    layer.Network.Learn(cast(vecs1(r, :), ioType), ...
+                        cast(vecs2(r, :), ioType));
+                end
+            else
+                layer.Network.Learn(cast(vecs1, ioType), ...
+                    cast(vecs2, ioType));
+            end
+
+        end
+
         function layer = refreshNetworkProperties(layer)
         %REFRESHNETWORKPROPERTIES - Refresh variant-specific properties
         %   Called by load after the shared hyperparameters have been

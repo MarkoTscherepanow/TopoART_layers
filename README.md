@@ -1,6 +1,6 @@
 # TopoART Layers
 
-Custom MATLAB deep learning layers that expose [TopoART](https://www.libtopoart.eu/) neural networks (an Adaptive Resonance Theory variant) as drop-in heads for `dlnetwork`. The layers wrap the .NET library [LibTopoART.Compatibility](https://github.com/MarkoTscherepanow/LibTopoART.Compatibility). TopoART is well-suited for tasks that require stable incremental learning after deployment or the ability to detect inputs lying outside the training distribution. Specific TopoART networks add further capabilities; for example, TopoART-AM provides bidirectional associative recall.
+Custom MATLAB deep learning layers that expose [TopoART](https://www.libtopoart.eu/) neural networks (an Adaptive Resonance Theory variant) as drop-in heads for `dlnetwork`. The layers wrap the .NET library [LibTopoART.Compatibility](https://github.com/MarkoTscherepanow/LibTopoART.Compatibility). TopoART is well-suited for tasks that require stable incremental learning after deployment or the ability to detect inputs lying outside the training distribution. Specific TopoART networks add further capabilities; for example, TopoART-R performs regression and TopoART-AM provides bidirectional associative recall.
 
 ## Why TopoART as a layer?
 
@@ -29,7 +29,7 @@ From the [src/](src/) folder, install the .NET dependencies once:
 installLibs
 ```
 
-This downloads `LibTopoART.dll` and `LibTopoART.Compatibility.dll` together with their further dependencies (`FSharp.Core.dll` and `System.Numerics.Vectors.dll`) into `src/lib/`. The layer constructors load the assembly on demand.
+This downloads `LibTopoART.dll` and `LibTopoART.Compatibility.dll` together with their further dependencies into `src/lib/`: `FSharp.Core.dll` and, only for the .NET Framework runtime, `System.Numerics.Vectors.dll`. The layer constructors load the assembly on demand.
 
 ### Standalone classification example
 
@@ -58,9 +58,39 @@ The figures below show the results for the default settings (linear scaling). Co
 | :---: | :---: | :---: |
 | ![Classification results of the original softmax head](images/classifier/softmax_head.png) | ![Classification results of the TopoART-C head](images/classifier/TopoART_head.png) | ![Classification results of the TopoART-C head after incremental training](images/classifier/TopoART_head_incremental.png) |
 
+### Standalone regression example
+
+[approx2dExample.m](src/samples/approx2dExample.m) builds a minimal `dlnetwork` consisting of a `featureInputLayer` followed by a [topoARTRegressionLayer](src/topoARTRegressionLayer.m), which wraps a TopoART-R network. TopoART-R learns the relation between independent variables (the input vector) and dependent variables (the output vector); during prediction, it estimates the dependent variables for a presented input vector. The sample trains the layer on randomly drawn samples of the MATLAB `peaks` function and approximates the surface on a uniform grid:
+
+```matlab
+approx2dExample         % default: rho_a = 0.95
+approx2dExample(0.99)   % smaller categories, finer surface
+```
+
+Both the inputs and the targets are rescaled to `[0, 1]`, as required by TopoART-R; the affine rescaling of the targets is inverted to restore the original scale of the predictions.
+
+### Backbone + TopoART-R head example
+
+[approxWithBackbone2dExample.m](src/samples/approxWithBackbone2dExample.m) runs the full regression workflow: pretrain a small MLP backbone with `trainnet` using a temporary fully connected output layer trained with a mean squared error loss, strip that head, train a TopoART-R head on the frozen backbone via `trainTopoART`, and compare both heads on a uniform grid. A circular region around the highest peak of the `peaks` function is omitted from all initial training. As in the classification example, the backbone features are mapped into `[0, 1]` by a frozen transform selected via `useScaling`:
+
+```matlab
+approxWithBackbone2dExample          % default: linear scaling
+approxWithBackbone2dExample(false)   % tanh-based normalisation
+```
+
+The figure below shows the true surface with the training samples overlaid as black markers; the omitted region around the highest peak contains no samples.
+
+![True peaks function with the training distribution overlaid](images/regressor/peaks_training_distribution.png)
+
+The figures below compare the two heads. Neither head has ever seen the omitted region during the initial training, so both can only interpolate across it and miss the peak (left and centre). After incremental training on samples from the omitted region — included in the overlay of the right figure — the TopoART-R head recovers the peak without forgetting the rest of the domain and without any gradient retraining; the pretrained head cannot follow without such retraining. Because the omitted region is enclosed by training data, the frozen backbone interpolates its features there: they stay distinct from the rest of the domain, which protects the existing knowledge, but they vary less than in trained regions, which limits the accuracy of the recovered peak.
+
+| Pretrained head | TopoART-R head | After incremental training |
+| :---: | :---: | :---: |
+| ![Approximation results of the pretrained head](images/regressor/pretrained_head.png) | ![Approximation results of the TopoART-R head](images/regressor/TopoART_head.png) | ![Approximation results of the TopoART-R head after incremental training](images/regressor/TopoART_head_incremental.png) |
+
 ### Associative memory (TopoART-AM) examples
 
-Beyond classification, the layer [topoARTAssociativeMemoryLayer.m](src/topoARTAssociativeMemoryLayer.m) wraps a TopoART-AM network and acts as a bidirectional associative memory. It learns associations between pairs of key vectors. The association is symmetric: after training, either key can be presented to recall the other. The recall direction is selected by the layer's `Direction` property and can be switched between prediction calls without rebuilding the layer or the `dlnetwork`. Recall is a 1-to-n mapping: within a `dlnetwork`, `predict` returns the strongest association together with its activation (a confidence score), while the layer's `recall` method returns the associated keys of a stimulus in order of descending F3 activation. It may return the complete set, but it is usually stopped earlier — by a minimum activation (and optionally a maximum number of recalls) — so that only strongly associated keys are returned.
+Beyond classification and regression, the layer [topoARTAssociativeMemoryLayer.m](src/topoARTAssociativeMemoryLayer.m) wraps a TopoART-AM network and acts as a bidirectional associative memory. It learns associations between pairs of key vectors. The association is symmetric: after training, either key can be presented to recall the other. The recall direction is selected by the layer's `Direction` property and can be switched between prediction calls without rebuilding the layer or the `dlnetwork`. Recall is a 1-to-n mapping: within a `dlnetwork`, `predict` returns the strongest association together with its activation (a confidence score), while the layer's `recall` method returns the associated keys of a stimulus in order of descending F3 activation. It may return the complete set, but it is usually stopped earlier — by a minimum activation (and optionally a maximum number of recalls) — so that only strongly associated keys are returned.
 
 Two samples associate two kinds of images, owners and objects, with an m-to-n mapping between them: each owner can be associated with several objects and an object can be shared by several owners. From the [src/samples/](src/samples/) folder, download the image dataset once:
 
@@ -86,7 +116,7 @@ The figure below shows the recall direction owner -> objects for a held-out test
 
 ## Important constraints
 
-- **Input range.** TopoART requires every input to lie in `[0, 1]`. Decide the transform **before** training TopoART and apply the identical mapping at training and inference time. Two options:
+- **Input range.** TopoART requires every input to lie in `[0, 1]`. For TopoART-R, the same applies to the regression targets; an affine target rescaling is inverted exactly to restore the original scale of the predictions. Decide the transform **before** training TopoART and apply the identical mapping at training and inference time. Two options:
     - **Self-bounding map** baked into the backbone, e.g., `functionLayer(@(x) 0.5 + 0.5*tanh(x))` (range `(0, 1)`) or `sigmoidLayer`. Simple and bound-safe but saturation can hide out-of-distribution points.
     - **Element-wise affine fit** of the backbone's outputs to an inner sub-interval such as `[0.25, 0.75]`, clipped to `[0, 1]` for inputs drifting outside the training distribution. Fit slope/offset **once** after backbone training and freeze them into the network — do not auto-rescale at inference.
 

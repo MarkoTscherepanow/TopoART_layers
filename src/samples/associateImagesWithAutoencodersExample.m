@@ -186,6 +186,11 @@ function associateImagesWithAutoencodersExample(recallActThresh, ...
     ownerSize  = size(trainOwners{1, 1});
     objectSize = size(trainObjects{1, 1});
 
+    % seed the random number generator so the autoencoder weight
+    % initialisation and epoch shuffling are reproducible (drop or
+    % change the seed to explore initialisation variability)
+    rng(0)
+
     % train one autoencoder per key (or reuse a cache), then use the
     % frozen encoders as backbones for the TopoART-AM head
     [ownerEncoder, ownerDecoder, objectEncoder, objectDecoder] = ...
@@ -533,22 +538,4 @@ function v = imageToVector(img)
 %   No resizing is applied; the image keeps its native resolution.
 
     v = single(img(:)) / 255;
-end
-
-function stop = trainnetDots(info)
-%TRAINNETDOTS - Print a progress dot every 20 epochs during trainnet
-
-    persistent lastDotEpoch
-    stop = false;
-
-    if strcmp(info.State, 'start')
-        lastDotEpoch = 0;
-    elseif strcmp(info.State, 'iteration')
-        if info.Epoch - lastDotEpoch >= 20
-            fprintf('.')
-            lastDotEpoch = info.Epoch;
-        end
-    elseif strcmp(info.State, 'done')
-        fprintf('\n')
-    end
 end

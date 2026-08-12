@@ -68,10 +68,9 @@
 %                       adaptation, i.e. no added permanent node or
 %                       edge and no permanent weight change (see
 %                       hasPermanentAdaptation); TopoART has then
-%                       stabilised, like the manual loop in
-%                       associateImagesExample. A consistent order
-%                       (Shuffle 'once'/'never') helps it settle;
-%                       'every-epoch' may keep adapting past MaxEpochs.
+%                       stabilised. A consistent order (Shuffle
+%                       'once'/'never') helps it settle; 'every-epoch'
+%                       may keep adapting past MaxEpochs.
 %                       (default: true)
 %
 %   Output Arguments
