@@ -1,6 +1,6 @@
 %CLASSIFY2DEXAMPLE - Classification sample using topoARTClassificationLayer
 %   ATTENTION: This function requires .NET Framework 4.7.2 or higher, or
-%   .NET 6.0 or higher. Furthermore, installLibs (in the parent src folder)
+%   .NET 6.0 or higher. Furthermore, installLibs (in the parent folder)
 %   must be run before CLASSIFY2DEXAMPLE can be used.
 %
 %   CLASSIFY2DEXAMPLE demonstrates the use of the custom deep learning
@@ -85,17 +85,17 @@ function classify2dExample(dataset, confThresh)
     oldPath  = addpath(srcPath, fullfile(srcPath, 'helpers'));
     pathCleanup = onCleanup(@() path(oldPath)); %#ok<NASGU>
 
-    % file for the PNG export into the images/classifier folder; an
-    % empty file name disables the export
+    % map image names to files in the images/classifier folder; an
+    % empty file name disables the PNG export
     if exportImages
         imagesPath = fullfile(fileparts(srcPath), 'images', ...
             'classifier'); %#ok<UNRCH>
         if ~isfolder(imagesPath)
             mkdir(imagesPath)
         end
-        exportFile = fullfile(imagesPath, ['TopoART_' dataset '.png']);
+        imageFile = @(name) fullfile(imagesPath, name);
     else
-        exportFile = ''; %#ok<UNRCH>
+        imageFile = @(name) ''; %#ok<UNRCH>
     end
 
     % Generate the chosen dataset and shuffle it randomly. The min/max
@@ -128,7 +128,7 @@ function classify2dExample(dataset, confThresh)
     topoArt = topoARTClassificationLayer(inputLen, moduleNum, rho_a, ...
                                          netType, netArgs{:});
 
-    disp('Start training (online, not gradient-based)')
+    disp('Start training (incremental, not gradient-based)')
     tic
     topoArt.learn(trainX, trainT);
     toc
@@ -159,6 +159,7 @@ function classify2dExample(dataset, confThresh)
     disp('Compute results figure')
 
     figName = 'Classification Results (topoARTClassificationLayer)';
+    exportFile = imageFile(['TopoART_' dataset '.png']);
     if isempty(exportFile)
         figure(Name = figName)
     else

@@ -348,27 +348,7 @@ classdef topoARTAssociativeMemoryLayer < topoARTLayerBase
                     size(key2, 1))
             end
 
-            % cast both keys to the interface type so the correct .NET
-            % Learn overload is selected; gather moves GPU-resident keys
-            % to the CPU, where the wrapped network computes
-            ioType = layer.inputOutputType();
-            key1 = gather(key1);
-            key2 = gather(key2);
-
-            % A 1-D key turns the per-sample matrix into a
-            % sampleNum-by-1 column, which MATLAB marshals as a 1-D
-            % vector and binds to the single-sample Learn overload (one
-            % full-length key). Present such samples one row at a time
-            % so each key keeps its length; the batch overload still
-            % handles the multi-feature case.
-            if size(key1, 2) == 1 || size(key2, 2) == 1
-                for r = 1:size(key1, 1)
-                    layer.Network.Learn(cast(key1(r, :), ioType), ...
-                        cast(key2(r, :), ioType));
-                end
-            else
-                layer.Network.Learn(cast(key1, ioType), cast(key2, ioType));
-            end
+            layer.learnVectorPairs(key1, key2);
 
         end
 

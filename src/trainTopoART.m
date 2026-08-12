@@ -18,7 +18,10 @@
 %       useful when the layer's wrapped network has been configured with
 %       Beta_sbm > 0 (so the second-best-matching neuron takes partial
 %       steps that benefit from repeated presentation). With the default
-%       Beta_sbm, additional epochs are largely idempotent.
+%       Beta_sbm, additional epochs are largely idempotent. With
+%       StopWhenStable (the default), training ends as soon as a full
+%       epoch causes no permanent adaptation, so MaxEpochs acts as an
+%       upper bound.
 %
 %   PRECONDITION (input range): For TopoART-C, every element of the feature
 %   tensor that backboneNet emits must lie in [0, 1]. The recommended
@@ -30,7 +33,9 @@
 %   network so that training and inference apply the identical mapping.
 %   Hypersphere TopoART-C is less strict wrt. the scaling interval. Larger
 %   intervals need to be reflected by larger values of the radial extend
-%   parameter R.
+%   parameter R. For a TopoART-R head, the regression targets yielded by
+%   ds must lie in [0, 1] as well: scale them before building the
+%   datastore and invert the scaling after prediction.
 %
 %   Syntax
 %     net = TRAINTOPOART(backboneNet, topoArtLayer, ds)
@@ -47,7 +52,8 @@
 %                    {'CB', 'CB'}).
 %
 %   Name-Value Arguments
-%     MaxEpochs       - Number of passes over the data. (default: 1)
+%     MaxEpochs       - Maximum passes over the data; an upper bound when
+%                       StopWhenStable is true. (default: 1)
 %     MiniBatchSize   - Samples per learn call. (default: 128)
 %     Shuffle         - 'every-epoch' (default), 'once', or 'never'.
 %     MiniBatchFormat - Cell of format strings for X and T. (default:
@@ -58,6 +64,14 @@
 %                       data with one row per sample for both X and T,
 %                       and returns ('C', 'B')-ordered matrices.
 %     Verbose         - Print epoch/iteration progress. (default: true)
+%     StopWhenStable  - Stop once a full epoch causes no permanent
+%                       adaptation, i.e. no added permanent node or
+%                       edge and no permanent weight change (see
+%                       hasPermanentAdaptation); TopoART has then
+%                       stabilised. A consistent order (Shuffle
+%                       'once'/'never') helps it settle; 'every-epoch'
+%                       may keep adapting past MaxEpochs.
+%                       (default: true)
 %
 %   Output Arguments
 %     net - dlnetwork with the trained topoArtLayer connected to the
@@ -76,6 +90,7 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
         options.MiniBatchFormat (1, :) cell = {'CB', 'CB'}
         options.MiniBatchFcn    (1, 1) function_handle = @defaultRowsToCB
         options.Verbose         (1, 1) logical = true
+        options.StopWhenStable  (1, 1) logical = true
     end
 
     % The backbone must have a single output that we can wire into the head.
@@ -149,6 +164,10 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
             order = randperm(sampleNum);
         end
 
+        if options.StopWhenStable
+            topoArtLayer.resetAdaptationState();
+        end
+
         for first = 1:options.MiniBatchSize:sampleNum
             iter = iter + 1;
             last = min(first + options.MiniBatchSize - 1, sampleNum);
@@ -161,6 +180,16 @@ function net = trainTopoART(backboneNet, topoArtLayer, ds, options)
                 'iterations: %d\n'], epoch, options.MaxEpochs, ...
                 sampleNum, iter);
         end
+
+        % stop once a full epoch causes no permanent adaptation
+        % (stabilised)
+        if options.StopWhenStable && ~topoArtLayer.hasPermanentAdaptation()
+            if options.Verbose
+                fprintf('  stabilised; stopping after epoch %d\n', epoch)
+            end
+            break
+        end
+
     end
 
     % Assemble the inference-ready network: backbone -> TopoART head.
