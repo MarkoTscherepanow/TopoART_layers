@@ -17,11 +17,17 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 %   semantics), but the property still refers to the same .NET instance, so
 %   training performed via learn remains visible during prediction.
 %
+%   MATLAB's save and load functions persist and restore the layer,
+%   including the wrapped network, via .mat files, even when the layer is
+%   part of a dlnetwork. The network is stored in the binary LibTopoART
+%   format; loading restores it as a new .NET instance that is independent
+%   of the saved one.
+%
 %   Common properties
 %     InputLen   - Length of the input vector (channels of the dlarray)
 %     ModuleNum  - Number of TopoART modules used by the wrapped network
 %     Rho_a      - Vigilance parameter of the first TopoART module
-%     NetType    - Network type from LibTopoART.Compatibility.Network
+%     NetType    - Name of the network type (e.g. 'Fast_TopoART_C')
 %     IOType     - Interface type used only for input/output
 %     Beta_sbm   - Learning rate of the second-best-matching neuron
 %     Phi        - Threshold for promoting candidate neurons to
@@ -32,10 +38,10 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 %
 %   Transient properties
 %     Network    - Handle to the wrapped LibTopoART.Compatibility TopoART
-%                  network instance, marked transient because .NET handles
-%                  cannot be serialised by MATLAB's deep learning
-%                  framework. Use save and load to persist and restore the
-%                  network state independently of the layer wrapper.
+%                  network instance, marked transient because MATLAB cannot
+%                  serialise .NET handles. Instead, saveobj stores the
+%                  network in the binary LibTopoART format, and loadobj
+%                  restores it.
 %
 %   Methods that subclasses must implement
 %     learn(layer, X, T) - Online training step or epoch (The shape and
@@ -76,7 +82,7 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
         % Rho_a - Vigilance parameter of the first TopoART module
         Rho_a
 
-        % NetType - Network type (LibTopoART.Compatibility.Network)
+        % NetType - Name of the network type (e.g. 'Fast_TopoART_C')
         NetType
 
         % IOType - Interface type used only for input/output
@@ -114,6 +120,14 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
         % Network - Handle to the wrapped LibTopoART.Compatibility
         % network instance (TopoART_i64d or TopoART_i64du8).
         Network
+
+    end
+
+    properties (Access = private)
+
+        % SerialisedNetwork - Wrapped network in the binary LibTopoART
+        % format (set by saveobj and cleared by loadobj)
+        SerialisedNetwork
 
     end
 
@@ -196,30 +210,12 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
                 path {mustBeTextScalar}
             end
 
-            topoARTLayerBase.ensureLibLoaded()
             if exist(path, 'file') ~= 2
                 error('topoARTLayerBase:fileNotFound', ...
                     'Network file not found: %s', path)
             end
 
-            % The interface types select which network class reads the
-            % file.
-            networkClass = topoARTLayerBase.networkClassName( ...
-                layer.IntType, layer.FPType, layer.IOType);
-            layer.Network = ...
-                feval(['LibTopoART.Compatibility.' networkClass], path);
-
-            layer.ModuleNum = double(layer.Network.ModuleNum);
-            layer.Rho_a     = double(layer.Network.Rho_a);
-            layer.Beta_sbm  = double(layer.Network.Beta_sbm);
-            layer.Phi       = double(layer.Network.Phi);
-            layer.Tau       = double(layer.Network.Tau);
-
-            % Refresh the length and category-specific properties. The
-            % default reflects InputLen and the radial extend R; subclasses
-            % whose wrapped network has a different input structure (e.g.
-            % two key vectors) override refreshNetworkProperties.
-            layer = layer.refreshNetworkProperties();
+            layer = layer.restoreNetwork(path);
 
         end
 
@@ -353,6 +349,40 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
     end
 
+    methods (Hidden)
+
+        function layer = saveobj(layer)
+        %SAVEOBJ - Serialise the wrapped network when the layer is saved
+        %   Called by MATLAB's save function. Stores the wrapped network,
+        %   serialised in the binary LibTopoART format, in a non-transient
+        %   property so that it is saved together with the layer.
+
+            if ~isempty(layer.Network)
+                layer.SerialisedNetwork = ...
+                    uint8(layer.Network.ToByteArray());
+            end
+
+        end
+
+    end
+
+    methods (Static, Hidden)
+
+        function layer = loadobj(layer)
+        %LOADOBJ - Restore the wrapped network when the layer is loaded
+        %   Called by MATLAB's load function. Reconstructs the wrapped
+        %   network from the data stored by saveobj and refreshes the
+        %   layer-side cached hyperparameters.
+
+            if ~isempty(layer.SerialisedNetwork)
+                layer = layer.restoreNetwork(layer.SerialisedNetwork);
+                layer.SerialisedNetwork = [];
+            end
+
+        end
+
+    end
+
     methods (Access = protected)
 
         function typeName = inputOutputType(layer)
@@ -401,8 +431,8 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
         function layer = refreshNetworkProperties(layer)
         %REFRESHNETWORKPROPERTIES - Refresh variant-specific properties
-        %   Called by load after the shared hyperparameters have been
-        %   refreshed from the wrapped network. The default reflects
+        %   Called by load and loadobj after the shared hyperparameters have
+        %   been refreshed from the wrapped network. The default reflects
         %   InputLen and the Hypersphere radial extend R. Subclasses whose
         %   wrapped network has a different input structure override this.
 
@@ -444,6 +474,36 @@ classdef (Abstract) topoARTLayerBase < nnet.layer.Layer
 
             adapted = bitand(state, mask) ~= ...
                 LibTopoART.AdaptationState.NO_ADAPTATION;
+
+        end
+
+        function layer = restoreNetwork(layer, source)
+        %RESTORENETWORK - Construct the wrapped network from saved data
+        %   Constructs the wrapped network from source, which is either the
+        %   path of a binary network file or a uint8 vector containing the
+        %   same binary data, and refreshes the layer-side cached
+        %   hyperparameters from it.
+
+            topoARTLayerBase.ensureLibLoaded()
+
+            % The interface types select which network class reads the saved
+            % network.
+            networkClass = topoARTLayerBase.networkClassName( ...
+                layer.IntType, layer.FPType, layer.IOType);
+            layer.Network = ...
+                feval(['LibTopoART.Compatibility.' networkClass], source);
+
+            layer.ModuleNum = double(layer.Network.ModuleNum);
+            layer.Rho_a     = double(layer.Network.Rho_a);
+            layer.Beta_sbm  = double(layer.Network.Beta_sbm);
+            layer.Phi       = double(layer.Network.Phi);
+            layer.Tau       = double(layer.Network.Tau);
+
+            % Refresh the length and category-specific properties. The
+            % default reflects InputLen and the radial extend R; subclasses
+            % whose wrapped network has a different input structure (e.g.
+            % two key vectors) override refreshNetworkProperties.
+            layer = layer.refreshNetworkProperties();
 
         end
 

@@ -10,10 +10,10 @@ function installLibs()
     nargoutchk(0, 0)
 
     % set the versions of the required libraries
-    fSharpCoreVersion = '10.1.400';
+    fSharpCoreVersion = '10.1.401';
     systemNumericsVectorsVersion = '4.6.1';
-    libTopoARTVersion = '1.0.0';
-    libTopoARTCompatibilityVersion = '0.7.0';
+    libTopoARTVersion = '1.1.0';
+    libTopoARTCompatibilityVersion = '0.8.0';
 
     % check .NET support
     if ~(ispc || isunix)
