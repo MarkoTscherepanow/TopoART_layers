@@ -39,9 +39,10 @@ classdef topoARTRegressionLayer < topoARTLayerBase
 %
 %   The wrapped .NET object is stored as a handle reference in the property
 %   Network (inherited from topoARTLayerBase). See topoARTLayerBase for
-%   details on the shared state and the value-class semantics. Use the
-%   inherited save and load methods to persist and restore the wrapped
-%   network independently of the layer wrapper.
+%   details on the shared state and the value-class semantics. MATLAB's save
+%   and load functions persist and restore the layer, including the wrapped
+%   network, via .mat files. The inherited save and load methods persist and
+%   restore the wrapped network alone, using the binary LibTopoART format.
 %
 %   ATTENTION: This layer requires .NET Framework 4.7.2 or higher, or
 %   .NET 6.0 or higher. Furthermore, installLibs must be run before
@@ -104,21 +105,21 @@ classdef topoARTRegressionLayer < topoARTLayerBase
 %                 library's default unchanged)
 %
 %   Methods
-%     learn(X, T)        - Train the wrapped TopoART-R network online on
-%                          the rows of X (size sampleNum-by-InputLen)
-%                          using the target outputs T (size
-%                          sampleNum-by-OutputLen). Phases of training
-%                          and prediction may be mixed arbitrarily.
+%     learn(X, T)        - Train the wrapped TopoART-R network online on the
+%                          rows of X (size sampleNum-by-InputLen) using the
+%                          target outputs T (size sampleNum-by-OutputLen).
+%                          Phases of training and prediction may be mixed
+%                          arbitrarily.
 %     predict            - Forward pass producing an OutputLen-channel
-%                          output (the predicted dependent variables)
-%                          in 'CB' format. A NaN column signals that no
-%                          prediction was possible for that sample.
+%                          output (the predicted dependent variables) in
+%                          'CB' format. NaN signals that no prediction is
+%                          possible yet.
 %     save(path)         - Persist the wrapped network to a binary file
 %                          (inherited from topoARTLayerBase)
-%     layer = load(path) - Replace the wrapped network with one read
-%                          from a binary file produced by save
-%                          (inherited from topoARTLayerBase; must be
-%                          assigned back due to value-class semantics)
+%     layer = load(path) - Replace the wrapped network with one read from a
+%                          binary file produced by save (inherited from
+%                          topoARTLayerBase; must be assigned back due to
+%                          value-class semantics)
 
     properties
 
@@ -184,14 +185,13 @@ classdef topoARTRegressionLayer < topoARTLayerBase
 
         function prediction = predict(layer, X)
         %PREDICT - Forward pass through the wrapped TopoART-R network
-        %   X is the unformatted dlarray for the layer input (channels
-        %   x batch, with C == InputLen). The returned unformatted
-        %   dlarray has OutputLen channels per sample holding the
-        %   predicted dependent variables in [0, 1] (or [0, 255] with
-        %   IOType 'uint8'). A NaN column signals that no prediction
-        %   was possible for that sample, in particular on a network
-        %   that has not learnt anything yet; NaN cannot be confused
-        %   with a genuine prediction. The dlnetwork propagates the
+        %   X is the unformatted dlarray for the layer input (channels x
+        %   batch, with C == InputLen). The returned unformatted dlarray has
+        %   OutputLen channels per sample holding the predicted dependent
+        %   variables in [0, 1] (or [0, 255] with IOType 'uint8'). All
+        %   outputs are NaN as long as no prediction is possible, i.e. while
+        %   the final TopoART module contains no neurons; NaN cannot be
+        %   confused with a genuine prediction. The dlnetwork propagates the
         %   input format ('CB') to the output automatically.
 
             if isempty(layer.Network)
@@ -217,14 +217,12 @@ classdef topoARTRegressionLayer < topoARTLayerBase
                     layer.InputLen)
             end
 
-            outputs = zeros(layer.OutputLen, sampleNum);
-            for i = 1:sampleNum
-                predicted = ...
-                    double(layer.Network.Predict(inputs(:, i)'));
-                if isempty(predicted)
-                    outputs(:, i) = NaN;
-                else
-                    outputs(:, i) = predicted(:);
+            outputs = NaN(layer.OutputLen, sampleNum);
+            nodeNums = double(layer.Network.NodeNum);
+            if nodeNums(end) > 0
+                for i = 1:sampleNum
+                    outputs(:, i) = ...
+                        double(layer.Network.Predict(inputs(:, i)'));
                 end
             end
 
@@ -333,7 +331,7 @@ classdef topoARTRegressionLayer < topoARTLayerBase
             layer.OutputLen = outputLen;
             layer.ModuleNum = moduleNum;
             layer.Rho_a     = rho_a;
-            layer.NetType   = netType;
+            layer.NetType   = netTypeName;
             layer.IOType    = options.IOType;
 
             % instantiate the wrapped .NET network using the constructor

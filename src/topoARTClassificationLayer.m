@@ -31,9 +31,10 @@ classdef topoARTClassificationLayer < topoARTLayerBase
 %
 %   The wrapped .NET object is stored as a handle reference in the property
 %   Network (inherited from topoARTLayerBase). See topoARTLayerBase for
-%   details on the shared state and the value-class semantics. Use the
-%   inherited save and load methods to persist and restore the wrapped
-%   network independently of the layer wrapper.
+%   details on the shared state and the value-class semantics. MATLAB's save
+%   and load functions persist and restore the layer, including the wrapped
+%   network, via .mat files. The inherited save and load methods persist and
+%   restore the wrapped network alone, using the binary LibTopoART format.
 %
 %   ATTENTION: This layer requires .NET Framework 4.7.2 or higher, or
 %   .NET 6.0 or higher. Furthermore, installLibs must be run before
@@ -312,7 +313,7 @@ classdef topoARTClassificationLayer < topoARTLayerBase
             layer.InputLen  = inputLen;
             layer.ModuleNum = moduleNum;
             layer.Rho_a     = rho_a;
-            layer.NetType   = netType;
+            layer.NetType   = netTypeName;
             layer.IOType    = options.IOType;
 
             % instantiate the wrapped .NET network (Hypersphere TopoART-C
